@@ -10,6 +10,38 @@ from typhon.physics import vmr2relative_humidity, specific_humidity2vmr
 from heating_rate import heating_rate
 
 
+def select_pressure_range(data, p, p_min, p_max):
+    """
+    Select data within pressure range p_min, p_max.
+    """
+    p_ind = p > p_min
+    p_ind &= p < p_max
+    return data[p_ind]
+
+def get_eml_bound_ind(anomaly):
+    """
+    Get indices of vertical bounds of positive moisture anomalies, 
+    i.e. of moist layers.
+    """
+    moist = anomaly > 0
+    eml_bound_ind = (np.nonzero(moist[1:] != moist[:-1])[0] + 1)
+    if moist[0]: # Add limit at index 0, if there is an anomaly
+        eml_bound_ind = np.concatenate([[0], eml_bound_ind])
+    if moist[-1]: # Add limit at the index -1, if there is an anomaly
+        eml_bound_ind = np.concatenate([eml_bound_ind, [len(moist) - 1]])
+    eml_bound_ind = eml_bound_ind.reshape(-1, 2)
+    if eml_bound_ind.shape[0] == 0:
+        return MoistureCharacteristics()
+    # Drop anomaly, if it's bound by upper pressure (lower z limit)
+    if eml_bound_ind[0, 0] == 0: 
+        eml_bound_ind = np.delete(eml_bound_ind, axis=0, obj=[0])
+    if eml_bound_ind.shape[0] == 0:
+        return MoistureCharacteristics()
+    # Drop anomaly, if it's bound by lower pressure (upper z limit)
+    if eml_bound_ind[-1, -1] == len(moist) - 1: 
+        eml_bound_ind = np.delete(eml_bound_ind, axis=0, obj=[-1])
+    return eml_bound_ind
+
 def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
                             heating_rate=None,
                             ref_heating_rate=None,
@@ -23,152 +55,155 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
                             z_in_km=False,
                             p_in_hPa=False,
                             ):
-        p_ind = p > p_min
-        p_ind &= p < p_max
-        p = p[p_ind]
-        z = z[p_ind]
-        t = t[p_ind]
-        h2o_vmr = h2o_vmr[p_ind]
-        ref_h2o_vmr = ref_h2o_vmr[p_ind]
+        p = select_pressure_range(p, p, p_min, p_max)
+        z = select_pressure_range(z, p, p_min, p_max)
+        t = select_pressure_range(t, p, p_min, p_max)
+        h2o_vmr = select_pressure_range(h2o_vmr, p, p_min, p_max)
+        ref_h2o_vmr = select_pressure_range(ref_h2o_vmr, p, p_min, p_max)
         theta = potential_temperature(t, p)
         dtheta_dp = np.diff(theta) / np.diff(p)
+
         anomaly = h2o_vmr - ref_h2o_vmr
-        moist = anomaly > 0
-        ss = (np.nonzero(moist[1:] != moist[:-1])[0] + 1)
-        if moist[0]: # Add limit at index 0, if there is an anomaly
-            ss = np.concatenate([[0], ss])
-        if moist[-1]: # Add limit at the index -1, if there is an anomaly
-            ss = np.concatenate([ss, [len(moist) - 1]])
-        ss = ss.reshape(-1, 2)
-        if ss.shape[0] == 0:
-            return MoistureCharacteristics()
-        if ss[0, 0] == 0: # Drop anomaly, if it's bound by upper pressure (lower z limit)
-            ss = np.delete(ss, axis=0, obj=[0])
-        if ss.shape[0] == 0:
-            return MoistureCharacteristics()
-        if ss[-1, -1] == len(moist) - 1: # Drop anomaly, if it's bound by lower pressure (upper z limit)
-            ss = np.delete(ss, axis=0, obj=[-1])
-        eml_pressure_widths = p[ss[:, 0]] - p[ss[:, 1]]
+        bound_ind = get_eml_bound_ind(anomaly)
+        eml_pressure_widths = p[bound_ind[:, 0]] - p[bound_ind[:, 1]]
         if not np.any(eml_pressure_widths > min_eml_p_width):
             return MoistureCharacteristics()
-        ss = ss[eml_pressure_widths > min_eml_p_width, :]
-        eml_pressure_widths = eml_pressure_widths[eml_pressure_widths > min_eml_p_width]
-        eml_height_widths = z[ss[:, 1]] - z[ss[:, 0]]
-        # Integrate VMR over the inversion layers, relative to humidity at layer bottom.
-        rh = vmr2relative_humidity(h2o_vmr, p, t, e_eq=e_eq_mixed_mk)
-        rh_ref = vmr2relative_humidity(ref_h2o_vmr, p, t, e_eq=e_eq_mixed_mk)
-        rh_anomaly = rh - rh_ref
+        bound_ind = bound_ind[eml_pressure_widths > min_eml_p_width, :]
+        eml_pressure_widths = eml_pressure_widths[
+            eml_pressure_widths > min_eml_p_width]
+        eml_height_widths = z[bound_ind[:, 1]] - z[bound_ind[:, 0]]
         eml_strengths = np.array(
             [
                 integrate_column(
-                    y=(anomaly)[ss[ieml, 0]:ss[ieml, 1]],
-                    x=z[ss[ieml, 0]:ss[ieml, 1]])
-                for ieml in range(ss.shape[0])
+                    y=(anomaly)[bound_ind[ieml, 0]:bound_ind[ieml, 1]],
+                    x=z[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
+                for ieml in range(bound_ind.shape[0])
             ]
         ) / eml_height_widths
         if not np.any(eml_strengths > min_eml_strength):
             return MoistureCharacteristics()
-        ss = ss[eml_strengths > min_eml_strength, :]
-        eml_pressure_widths = eml_pressure_widths[eml_strengths > min_eml_strength]
+        bound_ind = bound_ind[eml_strengths > min_eml_strength, :]
+        eml_pressure_widths = eml_pressure_widths[
+            eml_strengths > min_eml_strength]
         eml_height_widths = eml_height_widths[eml_strengths > min_eml_strength]
         eml_strengths = eml_strengths[eml_strengths > min_eml_strength]
-        eml_inds = [np.arange(start, stop) for start, stop in ss]
+        eml_inds = [np.arange(start, stop) for start, stop in bound_ind]
         anomaly_p_means = np.array(
-            [anomaly_position(p[eml_ind], anomaly[eml_ind]) for eml_ind in eml_inds]
+            [anomaly_position(p[eml_ind], anomaly[eml_ind]) 
+            for eml_ind in eml_inds]
         )
         anomaly_z_means = np.array(
-            [anomaly_position(z[eml_ind], anomaly[eml_ind]) for eml_ind in eml_inds]
+            [anomaly_position(z[eml_ind], anomaly[eml_ind]) 
+            for eml_ind in eml_inds]
         )
         anomaly_t_means = np.array(
-            [anomaly_position(t[eml_ind], anomaly[eml_ind]) for eml_ind in eml_inds]
+            [anomaly_position(t[eml_ind], anomaly[eml_ind]) 
+            for eml_ind in eml_inds]
         )
         anomaly_dtheta_dp_median = np.array(
             [np.median(dtheta_dp[eml_ind]) for eml_ind in eml_inds]
         ) 
         if heating_rate is not None:
-            heating_rate = heating_rate[p_ind]
+            heating_rate = select_pressure_range(heating_rate, p, p_min, p_max)
             heating_rate_median = np.array(
-                [np.median(heating_rate[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                [np.median(
+                    heating_rate[bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                for ieml in range(bound_ind.shape[0])]
             )
             heating_rate_min = np.array(
-                [np.min(heating_rate[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                [np.min(heating_rate[bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                for ieml in range(bound_ind.shape[0])]
             )
             heating_rate_max = np.array(
-                [np.max(heating_rate[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                [np.max(heating_rate[bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                for ieml in range(bound_ind.shape[0])]
             )
             heating_rate_10p = np.array(
-                [np.percentile(heating_rate[ss[ieml, 0]:ss[ieml, 1]], 10) for ieml in range(ss.shape[0])]
+                [np.percentile(
+                    heating_rate[bound_ind[ieml, 0]:bound_ind[ieml, 1]], 10) 
+                    for ieml in range(bound_ind.shape[0])]
             ) 
             heating_rate_90p = np.array(
-                [np.percentile(heating_rate[ss[ieml, 0]:ss[ieml, 1]], 90) for ieml in range(ss.shape[0])]
+                [np.percentile(
+                    heating_rate[bound_ind[ieml, 0]:bound_ind[ieml, 1]], 90) 
+                    for ieml in range(bound_ind.shape[0])]
             ) 
             if ref_heating_rate is not None:
-                ref_heating_rate = ref_heating_rate[p_ind]
+                ref_heating_rate = select_pressure_range(
+                    ref_heating_rate, p, p_min, p_max)
                 heating_rate_anom_means = np.array(
-                    [np.mean((ref_heating_rate - heating_rate)[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                    [np.mean(
+                        (ref_heating_rate - heating_rate)
+                        [bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                        for ieml in range(bound_ind.shape[0])]
                 )
                 heating_rate_anom_min = np.array(
-                    [np.min((ref_heating_rate - heating_rate)[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                    [np.min(
+                        (ref_heating_rate - heating_rate)
+                        [bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                        for ieml in range(bound_ind.shape[0])]
                 )
                 heating_rate_anom_max = np.array(
-                    [np.max((ref_heating_rate-heating_rate)[ss[ieml, 0]:ss[ieml, 1]]) for ieml in range(ss.shape[0])]
+                    [np.max((ref_heating_rate-heating_rate)
+                    [bound_ind[ieml, 0]:bound_ind[ieml, 1]]) 
+                    for ieml in range(bound_ind.shape[0])]
             )
             else: 
-                    heating_rate_anom_means = np.nan * np.ones(ss.shape[0])
-                    heating_rate_anom_min = np.nan * np.ones(ss.shape[0])
-                    heating_rate_anom_max = np.nan * np.ones(ss.shape[0])
-                    heating_rate_anom_10p = np.nan * np.ones(ss.shape[0])
-                    heating_rate_anom_90p = np.nan * np.ones(ss.shape[0])
+                    heating_rate_anom_means = np.nan * np.ones(
+                        bound_ind.shape[0])
+                    heating_rate_anom_min = np.nan * np.ones(
+                        bound_ind.shape[0])
+                    heating_rate_anom_max = np.nan * np.ones(
+                        bound_ind.shape[0])
+                    heating_rate_anom_10p = np.nan * np.ones(
+                        bound_ind.shape[0])
+                    heating_rate_anom_90p = np.nan * np.ones(
+                        bound_ind.shape[0])
         else:
-            heating_rate_median = np.nan * np.ones(ss.shape[0])
-            heating_rate_min = np.nan * np.ones(ss.shape[0])
-            heating_rate_max = np.nan * np.ones(ss.shape[0])
-            heating_rate_10p = np.nan * np.ones(ss.shape[0])
-            heating_rate_90p = np.nan * np.ones(ss.shape[0])
-            heating_rate_anom_means = np.nan * np.ones(ss.shape[0])
-            heating_rate_anom_min = np.nan * np.ones(ss.shape[0])
-            heating_rate_anom_max = np.nan * np.ones(ss.shape[0])
-            heating_rate_anom_10p = np.nan * np.ones(ss.shape[0])
-            heating_rate_anom_90p = np.nan * np.ones(ss.shape[0])
+            heating_rate_median = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_min = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_max = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_10p = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_90p = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_means = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_min = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_max = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_10p = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_90p = np.nan * np.ones(bound_ind.shape[0])
         if w_rad is not None:
-            w_rad = w_rad[p_ind]
+            w_rad = select_pressure_range(w_rad, p, p_min, p_max)
             if w_rad_smooth_length is not None:
-                wrad_df = pd.DataFrame(data={'wrad': w_rad}, index=z)
-                z_interp = np.arange(z.min(), z.max(), 10)
-                wrad_interp_df = interp(wrad_df, z_interp)
-                w_rad_smooth_interp = wrad_interp_df.rolling(
-                    window=int(w_rad_smooth_length / 10), 
-                    min_periods=1).mean()
-                w_rad_smooth = interp(w_rad_smooth_interp, z).values[:, 0]
-                wrad_median = np.array( 
-                [np.median(w_rad_smooth[ss[ieml, 0]:ss[ieml, 1]])
-                 for ieml in range(ss.shape[0])])
+                w_rad_smooth = smooth_wrad(w_rad, z, w_rad_smooth_length, bound_ind)
+                wrad_median = np.array(
+                    [np.median(
+                        w_rad_smooth[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
+        for ieml in range(bound_ind.shape[0])])
             else:
                 wrad_median = np.array(
-                [np.median(w_rad[ss[ieml, 0]:ss[ieml, 1]])
-                 for ieml in range(ss.shape[0])])
+                [np.median(w_rad[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
+                 for ieml in range(bound_ind.shape[0])])
         else:
-            wrad_median = np.nan * np.ones(ss.shape[0])
+            wrad_median = np.nan * np.ones(bound_ind.shape[0])
         if w_rad_smooth is not None:
             wrad_smooth_median = np.array(
-                [np.median(w_rad_smooth[ss[ieml, 0]:ss[ieml, 1]])
-                 for ieml in range(ss.shape[0])]) 
+                [np.median(w_rad_smooth[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
+                 for ieml in range(bound_ind.shape[0])]) 
         else:
-            wrad_smooth_median = np.nan * np.ones(ss.shape[0])
+            wrad_smooth_median = np.nan * np.ones(bound_ind.shape[0])
             
         characteristics = MoistureCharacteristics(
-            pmin=p[ss[:, 1]],
-            pmax=p[ss[:, 0]],
-            zmin=z[ss[:, 0]],
-            zmax=z[ss[:, 1]],
+            pmin=p[bound_ind[:, 1]],
+            pmax=p[bound_ind[:, 0]],
+            zmin=z[bound_ind[:, 0]],
+            zmax=z[bound_ind[:, 1]],
             strength=eml_strengths,
             pwidth=eml_pressure_widths,
             zwidth=eml_height_widths,
             pmean=anomaly_p_means,
             zmean=anomaly_z_means,
             tmean=anomaly_t_means, 
-            tmin=t[ss[:, 1]],
-            tmax=t[ss[:, 1]], 
+            tmin=t[bound_ind[:, 1]],
+            tmax=t[bound_ind[:, 1]], 
             heating_rate_med=heating_rate_median,
             heating_rate_min=heating_rate_min,
             heating_rate_max=heating_rate_max,
@@ -187,6 +222,15 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
             characteristics.to_hpa()
         return characteristics
 
+def smooth_wrad(w_rad, z, w_rad_smooth_length, bound_ind):
+    wrad_df = pd.DataFrame(data={'wrad': w_rad}, index=z)
+    z_interp = np.arange(z.min(), z.max(), 10)
+    wrad_interp_df = interp(wrad_df, z_interp)
+    w_rad_smooth_interp = wrad_interp_df.rolling(
+        window=int(w_rad_smooth_length / 10), 
+        min_periods=1).mean()
+    w_rad_smooth = interp(w_rad_smooth_interp, z).values[:, 0]
+    return w_rad_smooth
 
 def smooth_in_height(data, z, smooth_length, interp_interval=10):
     df = pd.DataFrame(data={'data': data}, index=z)
