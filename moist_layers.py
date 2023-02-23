@@ -1,4 +1,5 @@
 import numpy as np
+import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 import pickle
@@ -7,33 +8,38 @@ from typhon.math import integrate_column
 
 
 def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
-                            heating_rate=None,
-                            ref_heating_rate=None,
-                            w_rad=None,
-                            w_rad_smooth=None,
-                            w_rad_smooth_length=None,
-                            min_eml_p_width=5000.,
-                            min_eml_strength=1e-9,
-                            p_min=10000.,
-                            p_max=90000.,
-                            z_in_km=False,
-                            p_in_hPa=False,
-                            ):
+                        heating_rate=None,
+                        ref_heating_rate=None,
+                        w_rad=None,
+                        w_rad_smooth=None,
+                        w_rad_smooth_length=None,
+                        min_eml_p_width=5000.,
+                        min_eml_strength=1e-9,
+                        p_min=10000.,
+                        p_max=90000.,
+                        z_in_km=False,
+                        p_in_hPa=False,
+                        lat=None,
+                        lon=None,
+                        time=None,
+                        ):
     """
     Calculate moist layer characteristics for given H2O VMR profile.
     Moist layer characteristics are returned as MoistureCharacteristics
     objects.
     """
-    p = select_pressure_range(p, p, p_min, p_max)
     z = select_pressure_range(z, p, p_min, p_max)
     t = select_pressure_range(t, p, p_min, p_max)
     h2o_vmr = select_pressure_range(h2o_vmr, p, p_min, p_max)
     ref_h2o_vmr = select_pressure_range(ref_h2o_vmr, p, p_min, p_max)
+    p = select_pressure_range(p, p, p_min, p_max)
     theta = potential_temperature(t, p)
     dtheta_dp = np.diff(theta) / np.diff(p)
 
     anomaly = h2o_vmr - ref_h2o_vmr
     bound_ind = get_eml_bound_ind(anomaly)
+    if bound_ind is None:
+        return MoistureCharacteristics()
     eml_pressure_widths = p[bound_ind[:, 0]] - p[bound_ind[:, 1]]
     if not np.any(eml_pressure_widths > min_eml_p_width):
         return MoistureCharacteristics()
@@ -184,6 +190,9 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
         wrad_median=wrad_median,
         wrad_smooth_median=wrad_smooth_median,
         dtheta_dp_median=anomaly_dtheta_dp_median,
+        lat=lat,
+        lon=lon,
+        time=time,
     )
     if z_in_km:
         characteristics.to_km()
@@ -299,12 +308,12 @@ def get_eml_bound_ind(anomaly):
         eml_bound_ind = np.concatenate([eml_bound_ind, [len(moist) - 1]])
     eml_bound_ind = eml_bound_ind.reshape(-1, 2)
     if eml_bound_ind.shape[0] == 0:
-        return MoistureCharacteristics()
+        return None
     # Drop anomaly, if it's bound by upper pressure (lower z limit)
     if eml_bound_ind[0, 0] == 0: 
         eml_bound_ind = np.delete(eml_bound_ind, axis=0, obj=[0])
     if eml_bound_ind.shape[0] == 0:
-        return MoistureCharacteristics()
+        return None
     # Drop anomaly, if it's bound by lower pressure (upper z limit)
     if eml_bound_ind[-1, -1] == len(moist) - 1: 
         eml_bound_ind = np.delete(eml_bound_ind, axis=0, obj=[-1])
@@ -340,6 +349,9 @@ class MoistureCharacteristics:
                  wrad_median=np.array([np.nan]),
                  wrad_smooth_median=np.array([np.nan]),
                  dtheta_dp_median=np.array([np.nan]),
+                 lat=np.array([np.nan]),
+                 lon=np.array([np.nan]),
+                 time=np.array([np.nan]),
                  ):
         self.pmin = pmin
         self.pmax = pmax
@@ -364,6 +376,9 @@ class MoistureCharacteristics:
         self.wrad_median = wrad_median
         self.wrad_smooth_median = wrad_smooth_median
         self.dtheta_dp_median = dtheta_dp_median
+        self.lat = lat
+        self.lon = lon
+        self.time = time
 
     def __getitem__(self, index):
         return self.__init__(
@@ -407,9 +422,24 @@ class MoistureCharacteristics:
     def get_max_strength_anomaly(self):
         max_str_anomaly = self.__getitem__(index=self.strength.argmax())
         return max_str_anomaly
-
-
-
+    
+    def to_xr_dataset(self):
+        n_eml = len(self.strength)
+        d = xr.Dataset(
+            coords={
+                'eml_count': np.arange(n_eml),
+            },
+            data_vars={
+                'strength': (('eml_count'), self.strength),
+                'pmean': (('eml_count'), self.pmean),
+                'pwidth': (('eml_count'), self.pwidth),
+                'zwidth': (('eml_count'), self.zwidth),
+                'lat': (('eml_count'), self.lat.repeat(n_eml)),
+                'lon': (('eml_count'), self.lon.repeat(n_eml)),
+                'time': (('eml_count'), self.time.repeat(n_eml)),
+            }
+        )
+        return d
 
 
 def save_object_to_pickle(obj, filename):
@@ -438,3 +468,4 @@ def wtg(T,Tpot,Qcool_day,dTpot_dp):
     """
     Qcool_sec = Qcool_day/(24*60*60.)
     return Qcool_sec/(T/Tpot*(dTpot_dp))
+
