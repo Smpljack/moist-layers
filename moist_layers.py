@@ -469,3 +469,33 @@ def wtg(T,Tpot,Qcool_day,dTpot_dp):
     Qcool_sec = Qcool_day/(24*60*60.)
     return Qcool_sec/(T/Tpot*(dTpot_dp))
 
+
+def mask_eurec4a(ds, grid):
+    """
+    Return EUREC4A domain.
+    """
+    mask_eurec4a = (
+        (grid.clon > np.deg2rad(-65)) &
+        (grid.clon < np.deg2rad(-40)) &
+        (grid.clat > np.deg2rad(5)) &
+        (grid.clat < np.deg2rad(25))
+    )
+    return ds.isel(cell=mask_eurec4a)
+
+def mask_cross_section(ds, grid):
+    mask_cs = (
+        (grid.clon > np.deg2rad(-45.5)) &
+        (grid.clon < np.deg2rad(-44.5)) &
+        (grid.clat > np.deg2rad(8)) &
+        (grid.clat < np.deg2rad(25))
+    )
+    return ds.isel(cell=mask_cs)
+
+def mask_point(ds, grid):
+    mask_point = (
+    (grid.clon > np.deg2rad(-45.5)) &
+    (grid.clon < np.deg2rad(-44.5)) &
+    (grid.clat > np.deg2rad(21.5)) &
+    (grid.clat < np.deg2rad(22.5))
+    )
+    return ds.isel(cell=mask_point)
