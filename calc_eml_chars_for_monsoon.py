@@ -1,5 +1,6 @@
 import intake
 import numpy as np
+import xarray as xr
 import matplotlib.pyplot as plt
 import seaborn as sns
 from cartopy import crs as ccrs  # Cartogrsaphy library
@@ -11,19 +12,6 @@ from typhon.plots import profile_p
 
 import moist_layers as ml
 
-
-def mask_eurec4a(ds, grid):
-    """
-    Return EUREC4A domain.
-    """
-    mask_eurec4a = (
-        (grid.clon > np.deg2rad(-65)) &
-        (grid.clon < np.deg2rad(-40)) &
-        (grid.clat > np.deg2rad(5)) &
-        (grid.clat < np.deg2rad(25))
-    )
-    return ds.isel(cell=mask_eurec4a)
-
 def plot_vmr_profile(p, vmr, vmr_ref=None):
     fig, ax = plt.subplots()
     profile_p(p, vmr, ax=ax, label='vmr profile')
@@ -33,12 +21,9 @@ def plot_vmr_profile(p, vmr, vmr_ref=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cell_min", type=int,
-                    help="cell minimum",
-                    default=0)
-    parser.add_argument("--cell_max", type=int,
-                    help="cell minimum",
-                    default=0)
+    parser.add_argument("--time", type=str,
+                    help="timestamp",
+                    default="2021-07-30T06:00:00")
     args = parser.parse_args()
     # Open the main DKRZ catalog
     cat = intake.open_catalog(
@@ -48,17 +33,21 @@ def main():
     ds3d = cat["luk1043"].atm3d.to_dask()
     # ds2d = cat["luk1043"].atm2d.to_dask()
     grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
-    ds3d = mask_eurec4a(ds3d, grid)
+    ds3d = ml.mask_eurec4a(ds3d, grid)
     # ds2d = mask_eurec4a(ds2d, grid)
-    grid = mask_eurec4a(grid, grid)
-    ds3d = ds3d.sel(time="2021-07-30T06:00:00")
+    grid = ml.mask_eurec4a(grid, grid)
+    print("Loading data...", flush=True)
+    ds3d = ds3d.sel(time=args.time).load()
     # ds2d = ds2d.sel(time="2021-07-30T06:00:00")
     # .resample(
     #     time='3h', skipna=True,
     # ).mean()
-    eml_chars = []
-    for cell in range(args.cell_min, args.cell_max):
-        print(cell, flush=True)
+    ncells = ds3d.cell.max()
+    init_eml_col_flag = True # False until finding first EML case.
+    for cell in range(ncells.values):
+        print("Calculating moist layer characteristics for cell "
+             f"{cell}/{ncells.values} at {args.time}", 
+             flush=True)
         ds3d_col = ds3d.sel(
             {
                 'cell': cell,
@@ -78,14 +67,21 @@ def main():
                     p_min=30000.,
                     p_max=70000.,
                     z_in_km=False,
-
                     p_in_hPa=False,
                     lat=ds3d_col.clat.values,
                     lon=ds3d_col.clon.values,
                     time=ds3d_col.time.values,
                     )
-        eml_chars.append(eml_chars_col)
-    ml.save_object_to_pickle(eml_chars, f'eml_chars_cells_{args.cell_min}-{args.cell_max}.pickle')
+        # Don't store cases without EMLs (nan=float64 type)
+        if type(eml_chars_col.strength[0]) != np.float64:
+            if init_eml_col_flag:
+                init_eml_col_flag = False
+                eml_chars_ds = eml_chars_col.to_xr_dataset()
+            else:
+                eml_chars_ds = xr.concat(
+                    [eml_chars_ds, eml_chars_col.to_xr_dataset()], 
+                    dim='eml_count')
+    eml_chars_ds.to_netcdf(f'eml_data/eml_chars_{args.time}.nc')
 
 if __name__ == '__main__':
     main()
