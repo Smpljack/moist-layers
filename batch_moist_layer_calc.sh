@@ -7,9 +7,10 @@
 #SBATCH -t 08:00:00        # Set a limit on the total run time
 #SBATCH --mem=0            # 0=All memory 
 #SBATCH -A um0878          # Charge resources on this project account
-#SBATCH --output=%x_%A_%a.o   # File name for standard output
-#SBATCH --error=%x_%A_%a.err   # File name for error output
+#SBATCH --output=logs/%x_%A_%a.o   # File name for standard output
+#SBATCH --error=logs/%x_%A_%a.err   # File name for error output
 
 module load python3
 
-~/.local/share/jupyter/kernels/bin/python calc_eml_chars_for_monsoon.py --cell_min=0 --cell_max=100
+
+python calc_eml_chars_for_monsoon.py --time=$1
