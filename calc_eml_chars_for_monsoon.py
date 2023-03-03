@@ -6,6 +6,7 @@ import seaborn as sns
 from cartopy import crs as ccrs  # Cartogrsaphy library
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import argparse
+from scipy.interpolate import griddata
 
 from typhon.physics import vmr2relative_humidity, specific_humidity2vmr, e_eq_mixed_mk
 from typhon.plots import profile_p
@@ -18,6 +19,35 @@ def plot_vmr_profile(p, vmr, vmr_ref=None):
     if vmr_ref is not None:
         profile_p(p, vmr_ref, ax=ax, label='reference')
     return fig, ax
+
+def grid_monsoon_data(data, grid):
+    lon = np.rad2deg(grid.clon.values)
+    lat = np.rad2deg(grid.clat.values)
+    new_lon = np.arange(-65, -40, 0.05)
+    new_lat = np.arange(5, 25, 0.05)
+    new_mgrid = np.meshgrid(new_lon, new_lat)
+    new_lon_mgrid = new_mgrid[0]
+    new_lat_mgrid = new_mgrid[1]
+    gridded_ds = xr.Dataset(
+        coords=
+        {
+            'lat': new_lat,
+            'lon': new_lon,
+            'time': data.time,
+            'pfull': data.pfull,
+        },
+        data_vars=
+        {
+            f'{var}': (('lon', 'lat'), 
+                griddata(
+                    (lon, lat), data[f'{var}'], 
+                    (new_lon_mgrid, new_lat_mgrid), method='nearest').T)
+                for var in data.data_vars
+                if var not in ('lat', 'lon', 'time')
+        }
+    )
+    return gridded_ds
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -42,6 +72,7 @@ def main():
     # .resample(
     #     time='3h', skipna=True,
     # ).mean()
+    gridded_ds3d = grid_monsoon_data(ds3d, grid)
     ncells = ds3d.cell.max()
     init_eml_col_flag = True # False until finding first EML case.
     for cell in range(ncells.values):
@@ -64,8 +95,8 @@ def main():
         eml_chars_col = ml.eml_characteristics(vmr, vmr_ref, t, p, z,
                     min_eml_p_width=5000.,
                     min_eml_strength=1e-5,
-                    p_min=30000.,
-                    p_max=70000.,
+                    p_min=20000.,
+                    p_max=80000.,
                     z_in_km=False,
                     p_in_hPa=False,
                     lat=ds3d_col.clat.values,
