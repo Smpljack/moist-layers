@@ -432,6 +432,11 @@ class MoistureCharacteristics:
             data_vars={
                 'strength': (('eml_count'), self.strength),
                 'pmean': (('eml_count'), self.pmean),
+                'pmin': (('eml_count'), self.pmin),
+                'pmax': (('eml_count'), self.pmax),
+                'zmean': (('eml_count'), self.zmean),
+                'zmin': (('eml_count'), self.zmin),
+                'zmax': (('eml_count'), self.zmax),
                 'pwidth': (('eml_count'), self.pwidth),
                 'zwidth': (('eml_count'), self.zwidth),
                 'lat': (('eml_count'), self.lat.repeat(n_eml)),
