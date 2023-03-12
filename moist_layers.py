@@ -481,8 +481,8 @@ def mask_eurec4a(ds, grid):
     """
     mask_eurec4a = (
         (grid.clon > np.deg2rad(-65)) &
-        (grid.clon < np.deg2rad(-40)) &
-        (grid.clat > np.deg2rad(5)) &
+        (grid.clon < np.deg2rad(0)) &
+        (grid.clat > np.deg2rad(0)) &
         (grid.clat < np.deg2rad(25))
     )
     return ds.isel(cell=mask_eurec4a)
