@@ -45,11 +45,11 @@ def plot_eml_strength_map(eml_strength, lat, lon, time, fig=None, ax=None):
     ax.scatter(
         -45, 21, color=sns.color_palette('colorblind')[2], marker='x', s=100)
     ax.coastlines(resolution="10m", linewidth=0.6)
-    ax.set_extent([-65, -40, 5, 25], crs=ccrs.PlateCarree())
+    ax.set_extent([-65, 0, 5, 25], crs=ccrs.PlateCarree())
     ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
     lat_formatter = LatitudeFormatter()
     ax.yaxis.set_major_formatter(lat_formatter)
-    ax.set_xticks(np.arange(-65, -39, 5), crs=ccrs.PlateCarree())
+    ax.set_xticks(np.arange(-65, -39, 10), crs=ccrs.PlateCarree())
     lon_formatter = LongitudeFormatter(zero_direction_label=True)
     ax.xaxis.set_major_formatter(lon_formatter)
     ax.tick_params(labelsize=12)
@@ -86,11 +86,11 @@ def plot_eml_height_map(eml_height, lat, lon, time, fig=None, ax=None):
     ax.scatter(-45, 21, color=sns.color_palette(
         'colorblind')[2], marker='x', s=100)
     ax.coastlines(resolution="10m", linewidth=0.6)
-    ax.set_extent([-65, -40, 5, 25], crs=ccrs.PlateCarree())
+    ax.set_extent([-65, 0, 0, 25], crs=ccrs.PlateCarree())
     ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
     lat_formatter = LatitudeFormatter() 
     ax.yaxis.set_major_formatter(lat_formatter)
-    ax.set_xticks(np.arange(-65, -39, 5), crs=ccrs.PlateCarree())
+    ax.set_xticks(np.arange(-65, -39, 10), crs=ccrs.PlateCarree())
     lon_formatter = LongitudeFormatter(zero_direction_label=True)
     ax.xaxis.set_major_formatter(lon_formatter)
     ax.tick_params(labelsize=12)
@@ -115,7 +115,7 @@ def plot_eml_thickness_map(eml_pwidth, lat, lon, time, fig=None, ax=None):
             lat,
             s=1,
             c=eml_pwidth/100,
-            vmin=50,
+            vmin=100,
             vmax=300,
             cmap="density",
             transform=ccrs.PlateCarree(),
@@ -127,11 +127,11 @@ def plot_eml_thickness_map(eml_pwidth, lat, lon, time, fig=None, ax=None):
     ax.scatter(-45, 21, color=sns.color_palette(
         'colorblind')[2], marker='x', s=100)
     ax.coastlines(resolution="10m", linewidth=0.6)
-    ax.set_extent([-65, -40, 5, 25], crs=ccrs.PlateCarree())
+    ax.set_extent([-65, 0, 0, 25], crs=ccrs.PlateCarree())
     # ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
     # lat_formatter = LatitudeFormatter() 
     # ax.yaxis.set_major_formatter(lat_formatter)
-    ax.set_xticks(np.arange(-65, -39, 5), crs=ccrs.PlateCarree())
+    ax.set_xticks(np.arange(-65, -39, 10), crs=ccrs.PlateCarree())
     lon_formatter = LongitudeFormatter(zero_direction_label=True)
     ax.xaxis.set_major_formatter(lon_formatter)
     ax.tick_params(labelsize=12)
@@ -168,11 +168,11 @@ def plot_rh_anom_xsec(data, grid, mean_data):
     data_cs = data.sortby(sort_lat)
     data_point = ml.mask_point()
 
-def make_movie():
+def make_movie(image_paths, video_name):
     image_folder = 'plots'
-    video_name = 'big_eml_label_video.mp4'
+    video_name = video_name
 
-    images = glob.glob("plots/big_eml_labels_*.png")
+    images = glob.glob(image_paths)
     images.sort()
     # images.sort(
     # key=lambda image: float(re.findall('[+-]?[0-9]?[0-9]', image)[0]))
@@ -213,7 +213,7 @@ def plot_q_map(q, lat, lon, fig=None, ax=None):
     cb1.ax.set_xlabel("500 hPa Specific Humidity (kg/kg)", fontsize=10)
     cb1.ax.tick_params(labelsize=10)
     ax.coastlines(resolution="10m", linewidth=0.6)
-    ax.set_extent([-65, -40, 5, 25], crs=ccrs.PlateCarree())
+    ax.set_extent([-65, 0, 0, 25], crs=ccrs.PlateCarree())
     ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
     lat_formatter = LatitudeFormatter()
     ax.yaxis.set_major_formatter(lat_formatter)
@@ -235,7 +235,7 @@ def filter_eml_data(
         (data.pwidth > min_pwidth) &
         (data.pwidth < max_pwidth)
     )
-    return data.where(good, drop=True)
+    return data.isel(eml_count=good)
 
 
 def grid_eml_data(data):
@@ -276,34 +276,45 @@ def get_eml_mask(eml_ds, grid, maxdist):
         (np.rad2deg(eml_ds.lon), np.rad2deg(eml_ds.lat)),
         maxdist=maxdist,
         coordinates=grid,
-        projection=pyproj.Proj(proj="merc", lat_ts=np.rad2deg(eml_ds.lat.mean().values)),
+        projection=pyproj.Proj(
+            proj="merc", lat_ts=np.rad2deg(eml_ds.lat.mean().values)),
     )
     return mask
+
+def get_eml_ds_for_zrange(eml_ds, zmin, zmax):
+    layer_eml_ds = eml_ds.isel(
+        eml_count=((eml_ds.zmean > zmin) & (eml_ds.zmean < zmax)))
+    return layer_eml_ds
 
 def random_color():
     levels = np.arange(0, 1, 0.001)
     return tuple(random.choice(levels) for _ in range(3))
 
-def plot_eml_labels(eml_labels, lon, lat, cmap, fig=None, ax=None):
+def plot_eml_labels(eml_labels, lon, lat, cmap, 
+                    fig=None, ax=None, relabel=False, max_eml_label=None):
     if fig is None and ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
-    plot_labels = eml_labels.copy()
-    plot_label = 1
-    for label in np.unique(eml_labels):
-        plot_labels[plot_labels==label] = plot_label
-        plot_label += 1
+    if relabel:
+        plot_labels = eml_labels.copy()
+        plot_label = 0
+        for label in np.unique(eml_labels):
+            plot_labels[plot_labels==label] = plot_label
+            plot_label += 1
+    else:
+        plot_labels = eml_labels
     s = ax.scatter(lon, lat, c=plot_labels, s=1, cmap=cmap, 
-                    transform=ccrs.PlateCarree())
+                   vmin=0, vmax=max_eml_label, transform=ccrs.PlateCarree())
     cb = plt.colorbar(s, extend="max", orientation="horizontal", shrink=0.8, pad=0.1)
     cb.ax.set_xlabel("EML label", fontsize=10)
     cb.ax.tick_params(labelsize=10)
+    cb.ax.set_xlim([0, max_eml_label])
     ax.coastlines(resolution="10m", linewidth=0.6)
-    ax.set_extent([-65, -40, 5, 25], crs=ccrs.PlateCarree())
-    ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
+    ax.set_extent([-65, -0, 0, 25], crs=ccrs.PlateCarree())
+    ax.set_yticks(np.arange(0, 26, 5), crs=ccrs.PlateCarree())
     lat_formatter = LatitudeFormatter()
     ax.yaxis.set_major_formatter(lat_formatter)
-    ax.set_xticks(np.arange(-65, -39, 5), crs=ccrs.PlateCarree())
+    ax.set_xticks(np.arange(-65, -1, 10), crs=ccrs.PlateCarree())
     lon_formatter = LongitudeFormatter(zero_direction_label=True)
     ax.xaxis.set_major_formatter(lon_formatter)
     ax.tick_params(labelsize=12)
@@ -312,27 +323,40 @@ def plot_eml_labels(eml_labels, lon, lat, cmap, fig=None, ax=None):
     ax.set_aspect(1)
     return fig, ax
 
-def main():
-    # Open the main DKRZ catalog
-    cat = intake.open_catalog(
-        ["https://dkrz.de/s/intake"])["dkrz_monsoon_disk"]
-
-    # Load a Monsoon 2.0 dataset and the corresponding grid
-    ds3d = cat["luk1043"].atm3d.to_dask().sel(
-        time=slice("2021-07-28T00:00:00", "2021-08-02T00:00:00"))
-    grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
-    ds3d = ml.mask_eurec4a(ds3d, grid)
-    grid = ml.mask_eurec4a(grid, grid)
-    times = ds3d.time.values
-    random.seed(42)
-    colors = [random_color() for i in range(500)]
-    colors[0] = (1, 1, 1)
-    for time in times:
-        print(str(time)[:19])
-        data = ds3d.sel(time=time)
-        eml_ds = xr.open_dataset(f'eml_data/eml_chars_{str(time)[:19]}.nc') 
-        eml_ds = eml_ds.assign_coords(
+def load_eml_data(time):
+    eml_ds = xr.open_dataset(
+        f'eml_data/eml_chars_extended_{str(time)[:19]}.nc') 
+    eml_ds = eml_ds.assign_coords(
             {'eml_count': np.arange(len(eml_ds.eml_count))})
+    return eml_ds
+
+def get_3d_height_eml_labels(eml_ds, grid, spacing, heights):
+    eml_mask_3d = np.zeros((grid[0].shape + (len(heights),)))
+    for i, height in enumerate(heights):
+        layer_eml_ds = get_eml_ds_for_zrange(eml_ds, height, height+100)
+        if len(layer_eml_ds.eml_count) == 0: 
+            continue
+        eml_mask = get_eml_mask(
+            layer_eml_ds, grid=grid, maxdist=spacing*1*111e3)
+        eml_mask_3d[:, :, i] = eml_mask
+    eml_labels_3d = label(xr.where(eml_mask_3d, 1, 0), background=0)
+    return eml_labels_3d
+
+def project_3d_labels_to_2d(labels3d):
+    props = np.array(regionprops(labels3d))
+    area_sort_ind = np.argsort([prop.area for prop in props])
+    sorted_labels = [prop.label for prop in props[area_sort_ind]]
+    labels2d = np.zeros(labels3d[:, :, 0].shape, dtype=np.int64)
+    for label in sorted_labels[::-1]: # Go from big to small objects
+        label3d_proj_bool = np.any(labels3d == label, axis=2)
+        labels2d[label3d_proj_bool] = label
+    return labels2d
+
+def get_3d_time_eml_labels(times, grid, spacing):
+    eml_mask_3d = np.zeros((grid[0].shape + (len(times),)))
+    for i, time in enumerate(times):
+        print(f'{str(time)[:19]}')
+        eml_ds = load_eml_data(time)
         eml_ds = filter_eml_data(
             eml_ds, 
             min_strength=1e-4, 
@@ -341,50 +365,79 @@ def main():
             min_pwidth=10000, 
             max_pwidth=30000,
             )
-        region = vd.get_region(
-            (np.rad2deg(eml_ds.lon.values), np.rad2deg(eml_ds.lat.values)))
-        spacing = 0.05
-        grid = vd.grid_coordinates(region, spacing=spacing)
         eml_mask = get_eml_mask(eml_ds, grid=grid, maxdist=spacing*1*111e3)
         eml_labels = label(xr.where(eml_mask, 1, 0), background=0)
         eml_props = regionprops(eml_labels)
         eml_areas = [props.area for props in eml_props] 
         big_emls = [props.label for props in eml_props 
-                    if props.area > np.mean(eml_areas)]
-        eml_labels = xr.where(np.isin(eml_labels, big_emls), eml_labels, 0)
+                    if props.area > 3000]
+        big_eml_mask = xr.where(np.isin(eml_labels, big_emls), 1, 0)
+        eml_mask_3d[:, :, i] = big_eml_mask
+    eml_labels_3d = label(xr.where(eml_mask_3d, 1, 0), background=0)
+    return eml_labels_3d, grid
 
-        fig = plt.figure(figsize=(9, 4.5))
-        ax1 = fig.add_subplot(121, projection=ccrs.PlateCarree())
-        fig, ax1 = plot_eml_strength_map(
-            eml_ds.strength, np.rad2deg(eml_ds.lat), 
-            np.rad2deg(eml_ds.lon), eml_ds.time[0].values, fig=fig, ax=ax1)
-        ax2 = fig.add_subplot(122, projection=ccrs.PlateCarree())
-        cmap = ListedColormap(colors[:len(np.unique(eml_labels))], 
-                              name='eml_label_colors')
-        fig, ax2 = plot_eml_labels(eml_labels, grid[0], grid[1], cmap,
-                                   fig=fig, ax=ax2)
-        plt.suptitle(f'{str(time)[:19]}')
-        plt.savefig(f'plots/big_eml_labels_{str(time)[:19]}.png')
-        
-    #     fig = plt.figure(figsize=(9, 9))
-    #     fig, ax1 = plot_q_map(data.hus.sel(fulllevel=68), grid.clat, grid.clon,
-    #                           fig=fig, ax=ax1)
-    #     ax2 = fig.add_subplot(222, projection=ccrs.PlateCarree(), sharey=ax1)
-    #     fig, ax2 = plot_eml_strength_map(
-    #         eml_ds.strength, np.rad2deg(eml_ds.lat), 
-    #         np.rad2deg(eml_ds.lon), eml_ds.time[0].values, fig=fig, ax=ax2)
-    #     ax3 = fig.add_subplot(223, projection=ccrs.PlateCarree(), sharex=ax1)
-    #     fig, ax3 = plot_eml_height_map(
-    #         eml_ds.pmean, np.rad2deg(eml_ds.lat), 
-    #         np.rad2deg(eml_ds.lon), eml_ds.time[0].values, fig=fig, ax=ax3)
-    #     ax4 = fig.add_subplot(224, projection=ccrs.PlateCarree(), sharey=ax3)
-    #     fig, ax4 = plot_eml_thickness_map(
-    #         eml_ds.pwidth, np.rad2deg(eml_ds.lat), 
-    #         np.rad2deg(eml_ds.lon), eml_ds.time[0].values, fig=fig, ax=ax4)
-    #     plt.suptitle(f'{str(time)[:19]}')
-    #     plt.tight_layout()
-    #     plt.savefig(f'/home/u/u300676/moist-layers/plots/'
-    #                 f'composite_eml_map_{str(time)[:19]}.png')
-    # make_movie()
+
+def map_rain_rates(rr, lon, lat, fig=None, ax=None):
+    if fig is None and ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
+    cs1 = ax.scatter(
+            np.rad2deg(lon),
+            np.rad2deg(lat),
+            s=1,
+            c=rr,
+            vmin=0,
+            vmax=50,
+            cmap="density",
+            transform=ccrs.PlateCarree(),
+        )
+    ax.plot([-45, -45], [8, 25],
+             color='red', linestyle='-',
+             transform=ccrs.PlateCarree(),
+             )
+    ax.scatter(
+        -45, 21, color=sns.color_palette('colorblind')[2], marker='x', s=100)
+    cb1 = plt.colorbar(
+        cs1, extend="max", orientation="horizontal", shrink=0.8, pad=0.1)
+    cb1.ax.set_xlabel("rain rate (kg m$^{-2}$)", fontsize=10)
+    cb1.ax.tick_params(labelsize=10)
+    ax.coastlines(resolution="10m", linewidth=0.6)
+    ax.set_extent([-65, -0, 0, 25], crs=ccrs.PlateCarree())
+    ax.set_yticks(np.arange(10, 26, 5), crs=ccrs.PlateCarree())
+    lat_formatter = LatitudeFormatter()
+    ax.yaxis.set_major_formatter(lat_formatter)
+    # ax.set_xticks(np.arange(-65, -39, 5), crs=ccrs.PlateCarree())
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    # ax.xaxis.set_major_formatter(lon_formatter)
+    ax.tick_params(labelsize=12)
+    ax.set_xlabel(None)
+    ax.set_ylabel(None)
+    ax.set_aspect(1)
+    return fig, ax 
+
+
+def calc_updraft_height(wvec, zvec):
+    zuh_ind = np.where(wvec <= 0)[0].max()
+    if zuh_ind == 89:
+        return 0.
+    else:
+        return zvec[zuh_ind-1:zuh_ind+1].mean()
+
+def assign_updraft_height(data):
+    return data.assign(
+        {
+            'updraft_height': (
+                ('cell'), 
+                [calc_updraft_height(
+                    data.wa[:-1, cell], 
+                    data.zg[:-1, cell]) 
+                    for cell in range(len(data.cell))
+                    ])  
+        }
+    )
+
+def main():
+    pass
+         
 if __name__ == '__main__':
     main()
