@@ -72,7 +72,7 @@ def main():
     # .resample(
     #     time='3h', skipna=True,
     # ).mean()
-    gridded_ds3d = grid_monsoon_data(ds3d, grid)
+    # gridded_ds3d = grid_monsoon_data(ds3d, grid)
     ncells = ds3d.cell.max()
     init_eml_col_flag = True # False until finding first EML case.
     for cell in range(ncells.values):
@@ -112,7 +112,7 @@ def main():
                 eml_chars_ds = xr.concat(
                     [eml_chars_ds, eml_chars_col.to_xr_dataset()], 
                     dim='eml_count')
-    eml_chars_ds.to_netcdf(f'eml_data/eml_chars_{args.time}.nc')
+    eml_chars_ds.to_netcdf(f'eml_data/eml_chars_extended_{args.time}.nc')
 
 if __name__ == '__main__':
     main()
