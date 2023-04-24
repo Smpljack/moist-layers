@@ -24,26 +24,29 @@ def grid_monsoon_data(data, grid):
     lon = np.rad2deg(grid.clon.values)
     lat = np.rad2deg(grid.clat.values)
     new_lon = np.arange(-65, -40, 0.05)
-    new_lat = np.arange(5, 25, 0.05)
+    new_lat = np.arange(5, 25, 1)
     new_mgrid = np.meshgrid(new_lon, new_lat)
     new_lon_mgrid = new_mgrid[0]
     new_lat_mgrid = new_mgrid[1]
     gridded_ds = xr.Dataset(
         coords=
         {
-            'lat': new_lat,
-            'lon': new_lon,
-            'time': data.time,
-            'pfull': data.pfull,
+            'lat': (('lat'), new_lat),
+            'lon': (('lon'), new_lon),
+            'time': (('time'), np.array([data.time.data])),
+            'pfull': (('lat', 'lon', 'fulllevel'), 
+            griddata(
+                (lon, lat), data['pfull'].T.data, 
+                (new_lon_mgrid, new_lat_mgrid), method='nearest')),
         },
         data_vars=
         {
-            f'{var}': (('lon', 'lat'), 
+            f'{var}': (('lat', 'lon', 'fulllevel'), 
                 griddata(
-                    (lon, lat), data[f'{var}'], 
-                    (new_lon_mgrid, new_lat_mgrid), method='nearest').T)
+                    (lon, lat), data[f'{var}'].T.data, 
+                    (new_lon_mgrid, new_lat_mgrid), method='nearest'))
                 for var in data.data_vars
-                if var not in ('lat', 'lon', 'time')
+                if var not in ('lat', 'lon', 'time', 'pfull', 'wa', 'zghalf')
         }
     )
     return gridded_ds
@@ -53,7 +56,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--time", type=str,
                     help="timestamp",
-                    default="2021-07-30T06:00:00")
+                    default="2021-07-29T06:00:00")
     args = parser.parse_args()
     # Open the main DKRZ catalog
     cat = intake.open_catalog(
@@ -72,7 +75,7 @@ def main():
     # .resample(
     #     time='3h', skipna=True,
     # ).mean()
-    # gridded_ds3d = grid_monsoon_data(ds3d, grid)
+    gridded_ds3d = grid_monsoon_data(ds3d, grid)
     ncells = ds3d.cell.max()
     init_eml_col_flag = True # False until finding first EML case.
     for cell in range(ncells.values):
@@ -89,12 +92,13 @@ def main():
         p = ds3d_col.pfull.values[::-1][:48]
         z = ds3d_col.zg.values[::-1][:48]
         t = ds3d_col.ta.values[::-1][:48]
-        vmr_ref = ml.reference_h2o_vmr_profile(vmr, p, z)
+        vmr_ref = ml.reference_h2o_vmr_profile(vmr, p, z, 
+                        from_mixed_layer_top=True)
         # fig, ax = plot_vmr_profile(p, vmr, vmr_ref)
         # plt.savefig(f'/home/u/u300676/moist-layers/plots/vmr_profile_{cell}.png')
         eml_chars_col = ml.eml_characteristics(vmr, vmr_ref, t, p, z,
                     min_eml_p_width=5000.,
-                    min_eml_strength=1e-5,
+                    min_eml_strength=0.2,
                     p_min=20000.,
                     p_max=80000.,
                     z_in_km=False,
@@ -112,7 +116,8 @@ def main():
                 eml_chars_ds = xr.concat(
                     [eml_chars_ds, eml_chars_col.to_xr_dataset()], 
                     dim='eml_count')
-    eml_chars_ds.to_netcdf(f'eml_data/eml_chars_extended_{args.time}.nc')
+    eml_chars_ds.to_netcdf('/home/u/u300676/user_data/mprange/eml_data/'
+                           f'eml_chars_warmpool_rh_def_{args.time}.nc')
 
 if __name__ == '__main__':
     main()
