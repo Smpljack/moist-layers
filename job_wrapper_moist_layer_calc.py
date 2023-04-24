@@ -1,6 +1,4 @@
 import os
-import numpy as np
-import xarray as xr
 import intake
 
 cat = intake.open_catalog(
