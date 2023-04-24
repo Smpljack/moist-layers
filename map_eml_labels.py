@@ -9,15 +9,24 @@ from cartopy import crs as ccrs  # Cartogrsaphy library
 import random
 from skimage.measure import label, regionprops
 import xarray as xr
+import argparse
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--time_start", type=str,
+                    help="timestamp",
+                    default="2021-07-28T00:00:00")
+    parser.add_argument("--time_end", type=str,
+                    help="timestamp",
+                    default="2021-08-02T00:00:00")
+    args = parser.parse_args()
     # Open the main DKRZ catalog
     cat = intake.open_catalog(
         ["https://dkrz.de/s/intake"])["dkrz_monsoon_disk"]
 
     # Load a Monsoon 2.0 dataset and the corresponding grid
     ds3d = cat["luk1043"].atm3d.to_dask().sel(
-        time=slice("2021-07-28T00:00:00", "2021-08-02T00:00:00"))
+        time=slice(args.time_start, args.time_start))
     grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
     ds3d = ml.mask_eurec4a(ds3d, grid)
     grid = ml.mask_eurec4a(grid, grid)
@@ -35,7 +44,7 @@ def main():
         eml_ds = eec.load_eml_data(time)
         eml_ds = eec.filter_eml_data(
             eml_ds, 
-            min_strength=1e-4, 
+            min_strength=1e-3, 
             min_pmean=50000, 
             max_pmean=70000, 
             min_pwidth=10000, 
