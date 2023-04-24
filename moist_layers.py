@@ -6,6 +6,8 @@ import pickle
 import pandas as pd
 from typhon.math import integrate_column
 
+from typhon.physics import vmr2relative_humidity, e_eq_mixed_mk
+
 
 def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
                         heating_rate=None,
@@ -35,8 +37,9 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
     p = select_pressure_range(p, p, p_min, p_max)
     theta = potential_temperature(t, p)
     dtheta_dp = np.diff(theta) / np.diff(p)
-
-    anomaly = h2o_vmr - ref_h2o_vmr
+    rh = vmr2relative_humidity(h2o_vmr, p, t, e_eq=e_eq_mixed_mk)
+    ref_rh = vmr2relative_humidity(ref_h2o_vmr, p, t, e_eq=e_eq_mixed_mk)
+    anomaly = rh - ref_rh
     bound_ind = get_eml_bound_ind(anomaly)
     if bound_ind is None:
         return MoistureCharacteristics()
@@ -47,14 +50,16 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
     eml_pressure_widths = eml_pressure_widths[
         eml_pressure_widths > min_eml_p_width]
     eml_height_widths = z[bound_ind[:, 1]] - z[bound_ind[:, 0]]
-    eml_strengths = np.array(
-        [
-            integrate_column(
-                y=(anomaly)[bound_ind[ieml, 0]:bound_ind[ieml, 1]],
-                x=z[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
-            for ieml in range(bound_ind.shape[0])
-        ]
-    ) / eml_height_widths
+    eml_strengths = np.array([anomaly[bound_ind[ieml, 0]:bound_ind[ieml, 1]].max()
+                     for ieml in range(bound_ind.shape[0])])
+    # np.array(
+    #     [
+    #         integrate_column(
+    #             y=(anomaly)[bound_ind[ieml, 0]:bound_ind[ieml, 1]],
+    #             x=z[bound_ind[ieml, 0]:bound_ind[ieml, 1]])
+    #         for ieml in range(bound_ind.shape[0])
+    #     ]
+    # ) / eml_height_widths
     if not np.any(eml_strengths > min_eml_strength):
         return MoistureCharacteristics()
     bound_ind = bound_ind[eml_strengths > min_eml_strength, :]
@@ -258,25 +263,50 @@ def anomaly_position(grid, anomaly):
     anomaly_position = np.average(new_grid, weights=anomaly_regrid)
     return anomaly_position
 
-def reference_h2o_vmr_profile(h2o_vmr, p, z, p_min=10000., p_max=None):
+def calc_mixed_layer_top_pressure(q, p):
+    dq = np.gradient(q)
+    boundary_layer = p > 90000
+    mixed_layer_top_index = np.argmax(abs(dq[boundary_layer]))
+    return p[boundary_layer][mixed_layer_top_index-1]
+
+def reference_h2o_vmr_profile(
+    h2o_vmr, p, z, p_min=10000., p_max=None, from_mixed_layer_top=False):
     """
     Calculate reference H2O VMR profile as a logarithmic 
     quadratic fit against the H2O VMR profile of interest.
     """
-    is_tropo = p > p_min
-    if p_max is not None:
-        is_tropo = p < p_max
-    popt, _ = curve_fit(
-        ref_profile_opt_func,
-        z[is_tropo],
-        np.log(h2o_vmr[is_tropo]),
-        bounds=([-np.inf, -np.inf,
-                 np.log(h2o_vmr[is_tropo][0] - 1e-9)],
-                [np.inf, np.inf,
-                 np.log(h2o_vmr[is_tropo][0] + 1e-9)]),
-        # check_finite=False,
-    )
-    ref_profile = np.exp(np.polyval(popt, z))
+    is_tropo = (p > p_min)
+    if from_mixed_layer_top:
+        if np.any(p > 90000):
+            p_max = calc_mixed_layer_top_pressure(h2o_vmr, p)
+            print(f'mixed layer max: {p_max}')
+        else:
+            p_max = p.max()
+    if p_max is None:
+        popt, _ = curve_fit(
+            ref_profile_opt_func,
+            z[is_tropo],
+            np.log(h2o_vmr[is_tropo]),
+            bounds=([-np.inf, -np.inf,
+                    np.log(h2o_vmr[is_tropo][0] - 1e-9)],
+                    [np.inf, np.inf,
+                    np.log(h2o_vmr[is_tropo][0] + 1e-9)]),
+            # check_finite=False,
+        )
+        ref_profile = np.exp(np.polyval(popt, z))
+    else:
+        is_tropo &= (p <= p_max)
+        popt, _ = curve_fit(
+            ref_profile_opt_func,
+            z[is_tropo] - z[is_tropo][0],
+            np.log(h2o_vmr[is_tropo]),
+            bounds=([-np.inf, -np.inf,
+                    np.log(h2o_vmr[is_tropo][0] - 1e-9)],
+                    [np.inf, np.inf,
+                    np.log(h2o_vmr[is_tropo][0] + 1e-9)]),
+            # check_finite=False,
+        )
+        ref_profile = np.exp(np.polyval(popt, z-z[is_tropo][0]))
 
     return ref_profile
     
@@ -300,7 +330,7 @@ def get_eml_bound_ind(anomaly):
     Get indices of vertical bounds of positive moisture anomalies, 
     i.e. of moist layers.
     """
-    moist = anomaly > 0
+    moist = anomaly > 0.1
     eml_bound_ind = (np.nonzero(moist[1:] != moist[:-1])[0] + 1)
     if moist[0]: # Add limit at index 0, if there is an anomaly
         eml_bound_ind = np.concatenate([[0], eml_bound_ind])
@@ -439,6 +469,7 @@ class MoistureCharacteristics:
                 'zmax': (('eml_count'), self.zmax),
                 'pwidth': (('eml_count'), self.pwidth),
                 'zwidth': (('eml_count'), self.zwidth),
+                'tmean': (('eml_count'), self.tmean),
                 'lat': (('eml_count'), self.lat.repeat(n_eml)),
                 'lon': (('eml_count'), self.lon.repeat(n_eml)),
                 'time': (('eml_count'), self.time.repeat(n_eml)),
@@ -487,6 +518,19 @@ def mask_eurec4a(ds, grid):
     )
     return ds.isel(cell=mask_eurec4a)
 
+
+def mask_warmpool(ds, grid):
+    """
+    Return warmpool domain.
+    """
+    mask_warmpool = (
+        ((grid.clon > np.deg2rad(150)) |
+        (grid.clon < np.deg2rad(-150))) &
+        (grid.clat > np.deg2rad(-5)) &
+        (grid.clat < np.deg2rad(25))
+    )
+    return ds.isel(cell=mask_warmpool)
+
 def mask_cross_section(ds, grid):
     mask_cs = (
         (grid.clon > np.deg2rad(-45.5)) &
@@ -504,3 +548,10 @@ def mask_point(ds, grid):
     (grid.clat < np.deg2rad(22.5))
     )
     return ds.isel(cell=mask_point)
+
+def mask_tropics(ds, grid):
+    mask_tropics = (
+    (grid.clat > np.deg2rad(-20)) &
+    (grid.clat < np.deg2rad(20))
+    )
+    return ds.isel(cell=mask_tropics)
