@@ -20,11 +20,9 @@ def plot_vmr_profile(p, vmr, vmr_ref=None):
         profile_p(p, vmr_ref, ax=ax, label='reference')
     return fig, ax
 
-def grid_monsoon_data(data, grid):
+def grid_monsoon_data(data, grid, new_lon, new_lat):
     lon = np.rad2deg(grid.clon.values)
     lat = np.rad2deg(grid.clat.values)
-    new_lon = np.arange(-65, -40, 0.05)
-    new_lat = np.arange(5, 25, 1)
     new_mgrid = np.meshgrid(new_lon, new_lat)
     new_lon_mgrid = new_mgrid[0]
     new_lat_mgrid = new_mgrid[1]
@@ -56,7 +54,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--time", type=str,
                     help="timestamp",
-                    default="2021-07-29T06:00:00")
+                    default="2021-07-28T00:00:00")
     args = parser.parse_args()
     # Open the main DKRZ catalog
     cat = intake.open_catalog(
@@ -66,58 +64,79 @@ def main():
     ds3d = cat["luk1043"].atm3d.to_dask()
     # ds2d = cat["luk1043"].atm2d.to_dask()
     grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
-    ds3d = ml.mask_eurec4a(ds3d, grid)
+    new_lon = np.arange(-180, 180, 0.1)
+    new_lat = np.arange(-20, 20, 0.1)
+    ds3d = ml.mask_tropics(ds3d, grid)
     # ds2d = mask_eurec4a(ds2d, grid)
-    grid = ml.mask_eurec4a(grid, grid)
+    grid = ml.mask_tropics(grid, grid)
     print("Loading data...", flush=True)
     ds3d = ds3d.sel(time=args.time).load()
     # ds2d = ds2d.sel(time="2021-07-30T06:00:00")
     # .resample(
     #     time='3h', skipna=True,
     # ).mean()
-    gridded_ds3d = grid_monsoon_data(ds3d, grid)
-    ncells = ds3d.cell.max()
-    init_eml_col_flag = True # False until finding first EML case.
-    for cell in range(ncells.values):
-        print("Calculating moist layer characteristics for cell "
-             f"{cell}/{ncells.values} at {args.time}", 
-             flush=True)
-        ds3d_col = ds3d.sel(
-            {
-                'cell': cell,
-                # 'time': time,
-            }
-            )
-        vmr = specific_humidity2vmr(ds3d_col.hus).values[::-1][:48]
-        p = ds3d_col.pfull.values[::-1][:48]
-        z = ds3d_col.zg.values[::-1][:48]
-        t = ds3d_col.ta.values[::-1][:48]
-        vmr_ref = ml.reference_h2o_vmr_profile(vmr, p, z, 
-                        from_mixed_layer_top=True)
-        # fig, ax = plot_vmr_profile(p, vmr, vmr_ref)
-        # plt.savefig(f'/home/u/u300676/moist-layers/plots/vmr_profile_{cell}.png')
-        eml_chars_col = ml.eml_characteristics(vmr, vmr_ref, t, p, z,
-                    min_eml_p_width=5000.,
-                    min_eml_strength=0.2,
-                    p_min=20000.,
-                    p_max=80000.,
-                    z_in_km=False,
-                    p_in_hPa=False,
-                    lat=ds3d_col.clat.values,
-                    lon=ds3d_col.clon.values,
-                    time=ds3d_col.time.values,
-                    )
-        # Don't store cases without EMLs (nan=float64 type)
-        if type(eml_chars_col.strength[0]) != np.float64:
-            if init_eml_col_flag:
-                init_eml_col_flag = False
-                eml_chars_ds = eml_chars_col.to_xr_dataset()
-            else:
-                eml_chars_ds = xr.concat(
-                    [eml_chars_ds, eml_chars_col.to_xr_dataset()], 
-                    dim='eml_count')
-    eml_chars_ds.to_netcdf('/home/u/u300676/user_data/mprange/eml_data/'
-                           f'eml_chars_warmpool_rh_def_{args.time}.nc')
+    print("Gridding data...", flush=True)
+    gridded_ds3d = grid_monsoon_data(ds3d, grid, new_lon, new_lat)
+    gridded_ds3d = gridded_ds3d.assign(
+        {
+            f'{eml_var}': (('lat', 'lon', 'pfull'), 
+                            np.full(gridded_ds3d.hus.shape, np.nan))
+            for eml_var in 
+            ['eml_strength', 'eml_pmean', 'eml_pwidth', 
+             'eml_pmax', 'eml_pmin', 'eml_zmean', 'eml_zmax', 'eml_zmin']
+            
+        }
+    )
+    for ilat, lat in enumerate(gridded_ds3d.lat):
+        for ilon, lon in enumerate(gridded_ds3d.lon):
+            print("Calculating moist layer characteristics for lat/lon "
+                f"{np.round(lat.values, 2)}/{np.round(lon.values, 2)} " 
+                f"at {args.time}", 
+                flush=True)
+            ds3d_col = gridded_ds3d.sel(
+                {
+                    'lat': lat,
+                    'lon': lon,
+                    # 'time': time,
+                }
+                ).squeeze()
+            vmr = specific_humidity2vmr(ds3d_col.hus).values[::-1][:48]
+            p = ds3d_col.pfull.values[::-1][:48]
+            z = ds3d_col.zg.values[::-1][:48]
+            t = ds3d_col.ta.values[::-1][:48]
+            vmr_ref = ml.reference_h2o_vmr_profile(vmr, p, z, 
+                            from_mixed_layer_top=True)
+            # fig, ax = plot_vmr_profile(p, vmr, vmr_ref)
+            # plt.savefig(f'/home/u/u300676/moist-layers/plots/vmr_profile_{cell}.png')
+            eml_chars_col = ml.eml_characteristics(vmr, vmr_ref, t, p, z,
+                        min_eml_p_width=5000.,
+                        min_eml_strength=0.2,
+                        p_min=20000.,
+                        p_max=80000.,
+                        z_in_km=False,
+                        p_in_hPa=False,
+                        lat=ds3d_col.lat.values,
+                        lon=ds3d_col.lon.values,
+                        time=ds3d_col.time.values,
+                        )
+            # vertical gridding of emls
+            gridded_eml_ds = (eml_chars_col.
+                to_xr_dataset().
+                assign_coords({'pmean': eml_chars_col.to_xr_dataset().pmean}).
+                swap_dims({'eml_count': 'pmean'}).
+                reindex(
+                    indexers={'pmean': ds3d_col.pfull.values}, 
+                    method='nearest', 
+                    tolerance=1000).
+                swap_dims({'pmean': 'fulllevel'})
+                )
+            for eml_var in ['strength', 'pmean', 'pwidth', 'pmax', 'pmin', 
+                            'zmean', 'zmax', 'zmin']:
+                gridded_ds3d[f'eml_{eml_var}'][ilat, ilon, :] = \
+                    gridded_eml_ds[f'{eml_var}']
+                    # Don't store cases without EMLs (nan=float64 type) 
+    gridded_ds3d.to_netcdf('/home/u/u300676/user_data/mprange/eml_data/gridded/'
+                           f'gridded_monsoon_eml_tropics_{args.time}.nc')
 
 if __name__ == '__main__':
     main()
