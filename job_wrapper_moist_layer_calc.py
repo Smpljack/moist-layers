@@ -1,13 +1,10 @@
 import os
-import intake
+import numpy as np
 
-cat = intake.open_catalog(
-        ["https://dkrz.de/s/intake"])["dkrz_monsoon_disk"]
-
-ds3d = cat["luk1043"].atm3d.to_dask()
-times = ds3d.sel(time=slice("2021-07-28T00:00:00", "2021-08-11T00:00:00")).time.values
+times = np.arange(
+        '2021-06-01T00:00:00', '2021-07-01T00:00:00', dtype='datetime64[3h]')
 for time in times:
-    time_str = str(time)[:19]
+    time_str = str(time)
     os.system("sbatch "
             "/home/u/u300676/moist-layers/batch_moist_layer_calc.sh "
-            f"{time_str}")
+            f"{time}")
