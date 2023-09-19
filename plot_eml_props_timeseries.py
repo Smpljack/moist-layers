@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--time_start", type=str,
                     help="timestamp",
-                    default="2021-07-29T00:00:00")
+                    default="2021-07-28T00:00:00")
     parser.add_argument("--time_end", type=str,
                     help="timestamp",
                     default="2021-08-11T00:00:00")
@@ -30,9 +30,9 @@ def main():
     ds2d = cat["luk1043"].atm2d.to_dask().sel(
         time=slice(args.time_start, args.time_end))
     grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
-    ds3d = ml.mask_warmpool(ds3d, grid)
-    ds2d = ml.mask_warmpool(ds2d, grid)
-    grid = ml.mask_warmpool(grid, grid)
+    ds3d = ml.mask_eurec4a(ds3d, grid)
+    ds2d = ml.mask_eurec4a(ds2d, grid)
+    grid = ml.mask_eurec4a(grid, grid)
     times = ds3d.time.values
     total_eml_areas = []
     mean_eml_strength = []
@@ -41,22 +41,23 @@ def main():
     iorgs = []
     for i, time in enumerate(times):
         print(str(time)[:19], flush=True)
-        eml_ds = eec.load_eml_data(time)
+        eml_ds = eec.load_eml_data(time, 'extended_rh_def')
         eml_ds = eec.filter_eml_data(
             eml_ds, 
-            min_strength=1e-3, 
+            min_strength=0.3, 
             min_pmean=50000, 
-            max_pmean=70000, 
-            min_pwidth=10000, 
-            max_pwidth=30000,
+            max_pmean=80000, 
+            min_pwidth=5000, 
+            max_pwidth=40000,
             )
-        region1 = (160, 180, 0, 20)
-        region2 = (-180, -140, 0, 20)
+        region1 = (-65, 0, 0, 25)
+        # region2 = (-180, -140, 0, 20)
         spacing = 0.1
         grid1 = vd.grid_coordinates(region1, spacing=spacing)
-        grid2 = vd.grid_coordinates(region2, spacing=spacing)
-        grid = (np.concatenate([grid1[0], grid2[0]], axis=1), 
-                np.concatenate([grid1[1], grid2[1]], axis=1))
+        # grid2 = vd.grid_coordinates(region2, spacing=spacing)
+        # grid = (np.concatenate([grid1[0], grid2[0]], axis=1), 
+        #         np.concatenate([grid1[1], grid2[1]], axis=1))
+        grid = grid1
         heights = np.arange(2000, 7000, 100)
         eml_labels3d = eec.get_3d_height_eml_labels(eml_ds, grid, spacing, 
                                                     heights=heights)
@@ -99,7 +100,7 @@ def main():
     axs[5].plot(ds3d.time, mean_eml_thickness)
     axs[5].set(ylabel='mean EML thickness /\nkm')
     
-    plt.savefig('plots/warmpool_domain_average_timeseries.png', dpi=300)
+    plt.savefig('plots/eurec4a_extended_domain_average_timeseries.png', dpi=300)
 
 if __name__ == '__main__':
     main()
