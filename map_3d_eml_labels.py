@@ -30,9 +30,9 @@ def main():
     ds2d = cat["luk1043"].atm2d.to_dask().sel(
         time=slice(args.time_start, args.time_start))
     grid = cat.grids[ds3d.uuidOfHGrid].to_dask()
-    ds3d = ml.mask_eurec4a(ds3d, grid)
-    ds2d = ml.mask_eurec4a(ds2d, grid)
-    grid = ml.mask_eurec4a(grid, grid)
+    ds3d = ml.mask_warmpool(ds3d, grid)
+    ds2d = ml.mask_warmpool(ds2d, grid)
+    grid = ml.mask_warmpool(grid, grid)
     times = ds3d.time.values
     random.seed(42)
     max_eml_label = 10000
@@ -49,24 +49,24 @@ def main():
         print(str(time)[:19], flush=True)
         ds3d_time = ds3d.sel(time=time)
         ds2d_time = ds2d.sel(time=time)
-        eml_ds = eec.load_eml_data(time)
+        eml_ds = eec.load_eml_data(time, 'warmpool_rh_def')
         eml_ds = eec.filter_eml_data(
             eml_ds, 
             min_strength=0.3, 
-            min_pmean=50000, 
-            max_pmean=70000, 
-            min_pwidth=10000, 
+            min_pmean=20000, 
+            max_pmean=40000, 
+            min_pwidth=5000, 
             max_pwidth=40000,
             )
-        region1 = (-65, 0, 0, 25)
-        # region2 = (-180, -150, -5, 25)
+        region1 = (150, 180, -5, 25)
+        region2 = (-180, -150, -5, 25)
         spacing = 0.1
         grid1 = vd.grid_coordinates(region1, spacing=spacing)
-        # grid2 = vd.grid_coordinates(region2, spacing=spacing)
-        # grid = (np.concatenate([grid1[0], grid2[0]], axis=1), 
-        #         np.concatenate([grid1[1], grid2[1]], axis=1))
-        grid = grid1
-        heights = np.arange(2000, 7000, 50)
+        grid2 = vd.grid_coordinates(region2, spacing=spacing)
+        grid = (np.concatenate([grid1[0], grid2[0]], axis=1), 
+                np.concatenate([grid1[1], grid2[1]], axis=1))
+        # grid = grid1
+        heights = np.arange(5000, 14000, 50)
         eml_labels3d = eec.get_3d_height_eml_labels(eml_ds, grid, spacing, 
                                                     heights=heights)
         eml_labels2d = eec.project_3d_labels_to_2d(eml_labels3d)
@@ -80,10 +80,10 @@ def main():
             eml_labels2d, grid, eml_ds)
         fig = plt.figure(figsize=(9, 4.5))
         gs = fig.add_gridspec(1, 3)
-        ax1 = fig.add_subplot(gs[0, :2], projection=ccrs.PlateCarree())
+        ax1 = fig.add_subplot(gs[0, :2], projection=ccrs.PlateCarree(central_longitude=180))
         fig, ax1 = eec.plot_eml_labels(
             eml_labels2d, grid[0], grid[1], cmap,
-            max_eml_label=max_eml_label, fig=fig, ax=ax1, relabel=False)
+            max_eml_label=max_eml_label, fig=fig, ax=ax1, relabel=True)
         gridded_rr = eec.grid_monsoon_data(
             ds2d_time, 'rain_gsp_rate', np.deg2rad(grid[1][:, 0]), np.deg2rad(grid[0][0, :]))
         fig, ax1 = eec.plot_rr_contour(
@@ -100,11 +100,11 @@ def main():
                 ylabel='Pressure / hPa', xlabel='relative humidity / %')
         plt.suptitle(f'{str(time)[:19]}')
         plt.subplots_adjust(wspace=0.5)
-        plt.savefig(f'plots/profiles_extended_eml_labels_3d_{str(time)[:19]}.png', 
+        plt.savefig(f'plots/profiles_warmpool_200-500hPa_eml_labels_3d_{str(time)[:19]}.png', 
             dpi=300)
         eec.make_movie(
-            'plots/profiles_extended_eml_labels_3d_*.png', 
-            'videos/profiles_extended_eml_labels_3d_video.mp4')
+            'plots/profiles_warmpool_200-500hPa_eml_labels_3d_*.png', 
+            'videos/profiles_warmpool_200-500hPa_eml_labels_3d_video.mp4')
 
 if __name__ == '__main__':
     main()
