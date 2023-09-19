@@ -2,67 +2,104 @@ import numpy as np
 from sympy import true
 import xarray as xr
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import seaborn as sns
 from cartopy import crs as ccrs  # Cartogrsaphy library
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
-import intake
-import cv2
+import cartopy.feature as cfeature
+# import intake
+# import cv2
 import glob
 from scipy.interpolate import griddata
 from skimage.measure import label
 from skimage.measure import regionprops
 from sklearn.neighbors import NearestNeighbors
-import verde as vd
+# import verde as vd
 import pyproj
 import random
 from matplotlib.colors import ListedColormap
+import metpy.calc as mpcalc
+import matplotlib 
 
 from typhon.physics import (
     vmr2relative_humidity, specific_humidity2vmr, e_eq_mixed_mk)
 from typhon.plots import profile_p
 
-import moist_layers as ml
+# import moist_layers as ml
 
+def filter_gridded_eml_ds(
+    eml_ds,  min_strength, min_pmean, max_pmean, min_pwidth, max_pwidth):
+    eml_vars = [var for var in eml_ds.variables if var[:3] == 'eml']
+    for eml_var in eml_vars:
+        eml_ds_prange = eml_ds.where(
+            (eml_ds.pfull > min_pmean) &
+            (eml_ds.pfull < max_pmean)
+        )
+        eml_ds[eml_var] = eml_ds[eml_var].where(
+            np.any(eml_ds_prange.eml_strength > min_strength, axis=0) &
+            np.any(eml_ds_prange.eml_pwidth < max_pwidth, axis=0) &
+            np.any(eml_ds_prange.eml_pwidth > min_pwidth, axis=0)
+        )
+    return eml_ds
+
+def filter_gridded_eml_ds_all_vars(
+    eml_ds,  min_strength, min_pmean, max_pmean, min_pwidth, max_pwidth):
+
+    eml_ds_prange = eml_ds.where(
+        (eml_ds.pfull > min_pmean) &
+        (eml_ds.pfull < max_pmean)
+    )
+    eml_ds = eml_ds.where(
+        np.any(eml_ds_prange.eml_strength > min_strength, axis=0) &
+        np.any(eml_ds_prange.eml_pwidth < max_pwidth, axis=0) &
+        np.any(eml_ds_prange.eml_pwidth > min_pwidth, axis=0)
+    )
+    return eml_ds
 
 def plot_eml_strength_map(eml_strength, lat, lon, time, fig=None, ax=None):
     if fig is None and ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
-    cs1 = ax.scatter(
-            lon,
-            lat,
-            s=0.3,
-            c=eml_strength*100,
-            vmin=30,
-            vmax=50,
-            cmap="density",
-            transform=ccrs.PlateCarree(),
-        )
+    if len(lon) != len(lat):
+        cs1 = ax.pcolormesh(
+            lon, lat, eml_strength, vmin=30, vmax=70, cmap='density',
+            transform=ccrs.PlateCarree())
+    else:
+        cs1 = ax.scatter(
+                lon,
+                lat,
+                s=0.3,
+                c=eml_strength,
+                vmin=30,
+                vmax=50,
+                cmap="density",
+                transform=ccrs.PlateCarree(),
+            )
     # ax.plot([-45, -45], [8, 25],
     #          color='red', linestyle='-',
     #          transform=ccrs.PlateCarree(),
     #          )
     # ax.scatter(
     #     -45, 21, color=sns.color_palette('colorblind')[2], marker='x', s=100)
-    ax.coastlines(resolution="10m", linewidth=0.6)
-    # ax.set_yticks(np.arange(lat.min(), lat.max(), 5))
-    lat_formatter = LatitudeFormatter() 
-    ax.yaxis.set_major_formatter(lat_formatter)
+    ax.coastlines(resolution="10m", linewidth=1.5)
+    # ax.set_yticks(np.arange(lat.min(), lat.max()+1, 15))
+    # lat_formatter = LatitudeFormatter() 
+    # ax.yaxis.set_major_formatter(lat_formatter)
     # ax.set_xticks(np.arange(lon.min(), lon.max(), 10),)
-    lon_formatter = LongitudeFormatter(zero_direction_label=True)
-    ax.xaxis.set_major_formatter(lon_formatter)
-    ax.tick_params(labelsize=12)
+    # lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    # ax.xaxis.set_major_formatter(lon_formatter)
+    # ax.tick_params(labelsize=25)
     ax.set_xlabel(None)
     ax.set_ylabel(None)
-    ax.set_aspect(1)
+    # ax.set_aspect(1)
     # ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], crs=ccrs.PlateCarree())
     # ax.set_title(f"{str(time)[:19]}")
-    cb = plt.colorbar(
-        cs1, extend="max", orientation="horizontal", shrink=0.4, pad=0.01)
+    # cb = plt.colorbar(
+    #     cs1, extend="max", orientation="vertical", shrink=0.7, pad=0.04, aspect=10)
     # cb.ax.set(xticks=[-3, -2], xticklabels=[r'10$^{-3}$', r'10$^{-2}$'])
     # cb2.ax.set_ylabel(r"$RH-RH_{mean}$", fontsize=12)
-    cb.ax.set_xlabel(r"EML strength", fontsize=8)
-    cb.ax.tick_params(labelsize=8)
+    # cb.ax.set_ylabel("EML strength / %", fontsize=4)
+    # cb.ax.tick_params(labelsize=4)
 
     return fig, ax
 
@@ -70,16 +107,21 @@ def plot_eml_height_map(eml_height, lat, lon, time, fig=None, ax=None):
     if fig is None and ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
-    cs1 = ax.scatter(
-            lon,
-            lat,
-            s=0.3,
-            c=eml_height/100,
-            vmin=500,
-            vmax=700,
-            cmap="density",
-            transform=ccrs.PlateCarree(),
-        )
+    if len(lon) != len(lat):
+        cs1 = ax.pcolormesh(
+            lon, lat, eml_height, vmin=500, vmax=800, cmap='density',
+            transform=ccrs.PlateCarree())
+    else:
+        cs1 = ax.scatter(
+                lon,
+                lat,
+                s=0.3,
+                c=eml_height,
+                vmin=500,
+                vmax=800,
+                cmap="density",
+                transform=ccrs.PlateCarree(),
+            )
     # ax.plot([-45, -45], [8, 25],
     #          color='red', linestyle='-',
     #          transform=ccrs.PlateCarree(),
@@ -100,10 +142,10 @@ def plot_eml_height_map(eml_height, lat, lon, time, fig=None, ax=None):
     ax.set_aspect(1)
     # ax.set_title(f"{str(time)[:19]}")
     cb = plt.colorbar(
-        cs1, extend="max", orientation="horizontal", shrink=0.4, pad=0.01)
+        cs1, extend="max", orientation="vertical", shrink=0.7, pad=0.04, aspect=10)
     # cb2.ax.set_ylabel(r"$RH-RH_{mean}$", fontsize=12)
-    cb.ax.set_xlabel(r"EML height / hPa", fontsize=8)
-    cb.ax.tick_params(labelsize=8)
+    cb.ax.set_ylabel(r"EML height / hPa", fontsize=4)
+    cb.ax.tick_params(labelsize=4)
 
     return fig, ax
 
@@ -111,16 +153,21 @@ def plot_eml_thickness_map(eml_pwidth, lat, lon, time, fig=None, ax=None):
     if fig is None and ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
-    cs1 = ax.scatter(
-            lon,
-            lat,
-            s=0.3,
-            c=eml_pwidth/100,
-            vmin=100,
-            vmax=400,
-            cmap="density",
-            transform=ccrs.PlateCarree(),
-        )
+    if len(lon) != len(lat):
+        cs1 = ax.pcolormesh(
+            lon, lat, eml_pwidth, vmin=50, vmax=400, cmap='density',
+            transform=ccrs.PlateCarree())
+    else:
+        cs1 = ax.scatter(
+                lon,
+                lat,
+                s=0.3,
+                c=eml_pwidth,
+                vmin=50,
+                vmax=400,
+                cmap="density",
+                transform=ccrs.PlateCarree(),
+            )
     # ax.plot([-45, -45], [8, 25],
     #          color='red', linestyle='-',
     #          transform=ccrs.PlateCarree(),
@@ -141,9 +188,9 @@ def plot_eml_thickness_map(eml_pwidth, lat, lon, time, fig=None, ax=None):
     ax.set_aspect(1)
     # ax.set_title(f"{str(time)[:19]}")
     cb = plt.colorbar(
-        cs1, extend="max", orientation="horizontal", shrink=0.4, pad=0.01)
-    cb.ax.set_xlabel(r"EML thickness / hPa", fontsize=8)
-    cb.ax.tick_params(labelsize=8)
+        cs1, extend="max", orientation="vertical", shrink=0.7, pad=0.04, aspect=10)
+    cb.ax.set_ylabel(r"EML thickness / hPa", fontsize=4)
+    cb.ax.tick_params(labelsize=4)
 
     return fig, ax
 
@@ -209,11 +256,11 @@ def plot_gridded_q_map(q, lat, lon, fig=None, ax=None):
     # ax.scatter(
     #     -45, 21, color=sns.color_palette('colorblind')[2], marker='x', s=100)
     cb1 = plt.colorbar(
-        cs1, extend="max", orientation="horizontal", shrink=0.4, pad=0.01, 
+        cs1, extend="max", orientation="vertical", shrink=0.7, pad=0.04, aspect=10, 
         # anchor=(0.1, 1.5)
         )
-    cb1.ax.set_xlabel("500 hPa Specific Humidity (kg/kg)", fontsize=7)
-    cb1.ax.tick_params(labelsize=7)
+    cb1.ax.set_ylabel("Specific Humidity\n500hPa / kg kg$^{-1}$)", fontsize=4)
+    cb1.ax.tick_params(labelsize=4)
     ax.coastlines(resolution="10m", linewidth=0.6)
     # ax.set_yticks(np.arange(lat.min(), lat.max(), 5))
     # lat_formatter = LatitudeFormatter()
@@ -221,7 +268,7 @@ def plot_gridded_q_map(q, lat, lon, fig=None, ax=None):
     # ax.set_xticks(np.arange(lon.min(), lon.max(), 10))
     # lon_formatter = LongitudeFormatter(zero_direction_label=True)
     # ax.xaxis.set_major_formatter(lon_formatter)
-    ax.tick_params(labelsize=7)
+    ax.tick_params(labelsize=5)
     ax.set_xlabel(None)
     ax.set_ylabel(None)
     ax.set_aspect(1)
@@ -369,26 +416,29 @@ def random_color():
     levels = np.arange(0, 1, 0.001)
     return tuple(random.choice(levels) for _ in range(3))
 
+def relabel(labels2d):
+    new_labels = labels2d.copy()
+    for new_label, label in enumerate(np.unique(labels2d)):
+        new_labels[new_labels==label] = new_label
+    return new_labels
+
 def plot_eml_labels(eml_labels, lon, lat, cmap, 
-                    fig=None, ax=None, relabel=False, max_eml_label=None):
+                    fig=None, ax=None, max_eml_label=None):
     if fig is None and ax is None:
         fig = plt.figure()
-        ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
-    if relabel:
-        plot_labels = eml_labels.copy()
-        plot_label = 0
-        for label in np.unique(eml_labels):
-            plot_labels[plot_labels==label] = plot_label
-            plot_label += 1
+        ax = fig.add_subplot(111, projection=ccrs.PlateCarree())  
+    if len(lon) != len(lat):
+        s = ax.pcolormesh(
+            lon, lat, eml_labels, vmin=0, vmax=max_eml_label, cmap=cmap,
+            transform=ccrs.PlateCarree())
     else:
-        plot_labels = eml_labels
-    s = ax.scatter(lon, lat, c=plot_labels, s=0.3, cmap=cmap, 
-                   vmin=0, vmax=max_eml_label, transform=ccrs.PlateCarree())
-    cb = plt.colorbar(s, extend="max", orientation="horizontal", shrink=0.8, pad=0.1)
-    cb.ax.set_xlabel("EML label", fontsize=10)
-    cb.ax.tick_params(labelsize=10)
-    cb.ax.set_xlim([0, max_eml_label])
-    ax.coastlines(resolution="10m", linewidth=0.6)
+        s = ax.scatter(lon, lat, c=eml_labels, s=0.3, cmap=cmap, 
+                    vmin=0, vmax=max_eml_label, transform=ccrs.PlateCarree())
+    # cb = plt.colorbar(s, extend="max", orientation="horizontal", shrink=0.8, pad=0.1)
+    # cb.ax.set_xlabel("EML label", fontsize=10)
+    # cb.ax.tick_params(labelsize=10)
+    # cb.ax.set_xlim([0, max_eml_label])
+    ax.coastlines(resolution="110m", linewidth=1)
     # ax.set_yticks(np.arange(0, 26, 5), crs=ccrs.PlateCarree())
     # lat_formatter = LatitudeFormatter()
     # ax.yaxis.set_major_formatter(lat_formatter)
@@ -401,10 +451,10 @@ def plot_eml_labels(eml_labels, lon, lat, cmap,
     ax.set_aspect(1)
     return fig, ax
 
-def load_eml_data(time):
+def load_eml_data(time, data_path_keyword):
     eml_ds = xr.open_dataset(
         '/home/u/u300676/user_data/mprange/eml_data/'
-        f'eml_chars_extended_rh_def_{str(time)[:19]}.nc') 
+        f'eml_chars_{data_path_keyword}_{str(time)[:19]}.nc') 
     eml_ds = eml_ds.assign_coords(
             {'eml_count': np.arange(len(eml_ds.eml_count))})
     return eml_ds
@@ -417,6 +467,20 @@ def get_3d_height_eml_labels(eml_ds, grid, spacing, heights):
             continue
         eml_mask = get_eml_mask(
             layer_eml_ds, grid=grid, maxdist=spacing*1*111e3)
+        eml_mask_3d[:, :, i] = eml_mask
+    eml_labels_3d = label(xr.where(eml_mask_3d, 1, 0), background=0)
+    return eml_labels_3d
+
+def get_3d_height_eml_labels_griddata(
+    eml_ds, lat, lon, heights, height_tolerance=100):
+    eml_mask_3d = np.zeros((len(lat), len(lon), len(heights)))
+    for i, height in enumerate(heights):
+        eml_mask = xr.where(
+                np.any(
+                    eml_ds.eml_zmean > height - height_tolerance/2, axis=0) & 
+                np.any(
+                    eml_ds.eml_zmean < height + height_tolerance/2, axis=0), 
+                    x=True, y=False)
         eml_mask_3d[:, :, i] = eml_mask
     eml_labels_3d = label(xr.where(eml_mask_3d, 1, 0), background=0)
     return eml_labels_3d
@@ -620,38 +684,132 @@ def get_eml_char_ds_for_labelled_emls(eml_labels2d, label_grid, eml_ds, ds3d=Non
             eml_label_ds[f'{char}_mean'][i] = mean_eml_chars_label[f'{char}'][0]
     return eml_label_ds
 
-def get_mean_profiles_for_labelled_emls(eml_labels2d, label_grid, ds3d):
+def get_mean_profiles_for_labelled_emls_griddata(
+    eml_labels2d, eml_ds, vertical_dim):
     eml_regionprops = regionprops(eml_labels2d)
-    ds3d = add_rh_to_ds(ds3d.squeeze(), out_dims=('fulllevel', 'cell'))
     eml_label_ds = xr.Dataset(
         coords={
             'eml_label': np.array(
                 [props.label for props in eml_regionprops]),
-            'fulllevel': ds3d.fulllevel.values,
+            vertical_dim: eml_ds[vertical_dim].values,
         },
         data_vars={
             f'{var}_mean': (
-                ('eml_label', 'fulllevel'), 
+                ('eml_label', vertical_dim), 
                 np.full(
-                    (len(eml_regionprops), len(ds3d.fulllevel.values)), 
+                    (len(eml_regionprops), len(eml_ds[vertical_dim].values)), 
                     np.nan))
-            for var in ['pfull', 'ta', 'hus', 'zg', 'rh']
+            for var in ['pfull', 't', 'q', 'z', 'rh', 'hus', 'ta', 'zg'] 
+            if var in eml_ds.variables
             }
         )
-    ds3d_lat_lon_tuples = [
-        (lat, lon) for lat, lon in zip(
-            np.rad2deg(ds3d.clat.values), np.rad2deg(ds3d.clon.values))
-        ]
     for i, props in enumerate(eml_regionprops):
-        mean_eml_profiles = get_ds3d_subset_for_label(
-            ds3d, eml_labels2d, label_grid, props.label, 
-            ds3d_lat_lon_tuples).mean('cell')
+        mean_eml_profiles = eml_ds.where(
+            eml_labels2d == props.label
+        ).mean(['lat', 'lon'])
 
-        for var in ['pfull', 'ta', 'hus', 'zg', 'rh']:
-            eml_label_ds[f'{var}_mean'][i, :] = \
-                mean_eml_profiles[f'{var}'].load()[0, :]
+        for var in ['pfull', 't', 'q', 'z', 'rh', 'hus', 'ta', 'zg']:
+            if var in eml_ds.variables:
+                eml_label_ds[f'{var}_mean'][i, :] = \
+                    mean_eml_profiles[f'{var}'].load()
     return eml_label_ds
     
+def hovmoller_plot(
+    lons, times, data_fill, lat_min, lat_max, title, data_line=None,):
+    fig = plt.figure(figsize=(10, 13))
+    # Use gridspec to help size elements of plot; small top plot and big bottom plot
+    gs = gridspec.GridSpec(nrows=2, ncols=1, height_ratios=[1, 5], hspace=0.1)
+
+    # Tick labels
+    x_tick_labels = [u'180\N{DEGREE SIGN}W', u'90\N{DEGREE SIGN}W',
+                     u'60\N{DEGREE SIGN}W', u'0\N{DEGREE SIGN}',
+                     u'20\N{DEGREE SIGN}E',
+                     u'90\N{DEGREE SIGN}E', u'180\N{DEGREE SIGN}E']
+
+    # Top plot for geographic reference (makes small map)
+    ax1 = fig.add_subplot(gs[0, 0], projection=ccrs.PlateCarree(central_longitude=0))
+    ax1.hlines([lat_min, lat_max], lons.min(), lons.max(),
+     colors=['red', 'red'], linestyles=['--', '--'])
+    ax1.set_extent([-180, 180, -30, 30], 
+        ccrs.PlateCarree(central_longitude=0))
+    ax1.set_yticks([-30, -15, 0, 15, 30])
+    ax1.set_yticklabels(
+        [u'30\N{DEGREE SIGN}S', u'15\N{DEGREE SIGN}S', u'Eq', 
+         u'15\N{DEGREE SIGN}N', u'30\N{DEGREE SIGN}N'])
+    ax1.set_xticks([-180, -90, -60, 0, 20, 90, 180])
+    ax1.set_xticklabels(x_tick_labels)
+    ax1.grid(linestyle='dotted', linewidth=2)
+
+    # Add geopolitical boundaries for map reference
+    ax1.add_feature(cfeature.COASTLINE.with_scale('50m'))
+    ax1.add_feature(
+        cfeature.LAKES.with_scale('50m'), color='black', linewidths=0.5)
+
+    # Set some titles
+    plt.title('Hovmoller Diagram', loc='left')
+    plt.title(title, loc='right')
+
+    # Bottom plot for Hovmoller diagram
+    ax2 = fig.add_subplot(gs[1, 0])
+    ax2.invert_yaxis()  # Reverse the time order to do oldest first
+
+    # Plot of chosen variable averaged over latitude and slightly smoothed
+    clevs_line = np.arange(-2, 2.2, 0.2)
+    clevs_fill = np.arange(20, 50, 2)
+    # Tick labels
+    x_tick_labels = [
+        u'60\N{DEGREE SIGN}W', u'40\N{DEGREE SIGN}W', u'20\N{DEGREE SIGN}W', 
+        u'0\N{DEGREE SIGN}W', u'20\N{DEGREE SIGN}E'
+        ]
+    x_ticks = [-60, -40, -20, 0, 20]
+    # cf = ax2.contourf(
+    #     lons, times, data_fill, clevs_fill, 
+    #     cmap='density', extend='both', linestyles='solid',
+    #     negative_linestyles='dashed')
+    cf = ax2.pcolormesh(lons, times, data_fill, cmap='density', vmin=20, vmax=50)
+    cs = ax2.contour(
+        lons, times, mpcalc.smooth_n_point(
+        data_line, 9, 2), clevs_line, linewidths=1, alpha=0.8,
+        cmap='RdYlGn')
+
+    cbar1 = plt.colorbar(
+        cf, orientation='horizontal', pad=0.0002, aspect=50, extendrect=True, 
+        ax=ax2)
+    cbar1.set_label('EML strength / %')
+    norm = matplotlib.colors.Normalize(
+        vmin=cs.cvalues.min(), vmax=cs.cvalues.max())
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cs.cmap)
+    sm.set_array([])
+    cbar2 = plt.colorbar(
+        sm, ticks=clevs_line, orientation='horizontal', pad=0.01, aspect=50,
+        ax=cbar1.ax, extendrect=True,)
+    cbar2.set_label('v-wind / ms$^{-1}$')
+
+    # Make some ticks and tick labels
+    ax2.set_xticks(x_ticks)
+    ax2.set_xticklabels(x_tick_labels)
+    ax2.set_yticks(times[::8])
+    ax2.set_yticklabels(
+        ['{0:%Y-%m-%d %HZ}'.format(times[i]) for i in range(0, len(times), 8)])
+
+    # Set some titles
+    # plt.title('moist layer strength', loc='left', fontsize=10)
+    plt.title('Time Range: {0:%Y%m%d %HZ} - {1:%Y%m%d %HZ}'.format(times[0], times[-1]),
+            loc='right', fontsize=10)
+    return (fig, ax1, ax2)
+
+def eml_char_ds_to_pgrid(eml_char_ds, pgrid, vertical_dim):
+    gridded_eml_ds = (
+        eml_char_ds.
+        assign_coords({'pmean': eml_char_ds.pmean}).
+        swap_dims({'eml_count': 'pmean'}).
+        reindex(
+            indexers={'pmean': pgrid}, 
+            method='nearest', 
+            tolerance=np.diff(list(pgrid) + [0])/2).
+        swap_dims({'pmean': vertical_dim})
+        )
+    return gridded_eml_ds
 
 def main():
     pass
