@@ -5,6 +5,7 @@ from scipy.optimize import curve_fit
 import pickle
 import pandas as pd
 from typhon.math import integrate_column
+from scipy.interpolate import interp1d
 
 from typhon.physics import vmr2relative_humidity, e_eq_mixed_mk
 
@@ -275,11 +276,31 @@ def reference_h2o_vmr_profile(
     Calculate reference H2O VMR profile as a logarithmic 
     quadratic fit against the H2O VMR profile of interest.
     """
+    n_na = np.isnan(p).sum()
+    if n_na > 0:
+        print(f"Found {n_na} missing values in p for reference profile "
+                "calculation. Interpolating...")
+        # In case of missing values, interpolate over them.
+        x = np.arange(len(p))
+        p = np.interp(x, x[~np.isnan(p)], p[~np.isnan(p)])
+    n_na = np.isnan(z).sum()
+    if n_na > 0:
+        print(f"Found {n_na} missing values in z for reference profile "
+                "calculation. Interpolating...")
+        # In case of missing values, interpolate over them.
+        x = np.arange(len(z))
+        z = np.interp(x, x[~np.isnan(z)], z[~np.isnan(z)])
+    n_na = np.isnan(h2o_vmr).sum()
+    if n_na > 0:
+        print(f"Found {n_na} missing values in h2o_vmr for reference profile "
+                "calculation. Interpolating...")
+        # In case of missing values, interpolate over them.
+        x = np.arange(len(h2o_vmr))
+        h2o_vmr = np.interp(x, x[~np.isnan(h2o_vmr)], z[~np.isnan(h2o_vmr)])
     is_tropo = (p > p_min)
     if from_mixed_layer_top:
         if np.any(p > 90000):
             p_max = calc_mixed_layer_top_pressure(h2o_vmr, p)
-            print(f'mixed layer max: {p_max}')
         else:
             p_max = p.max()
     if p_max is None:
@@ -492,6 +513,9 @@ def potential_temperature(t, p):
     """Calculate potential temperature."""
     return t * (100000/p)**0.286
 
+def equivalent_potential_temperature(t, p, q):
+    """Calculate equivalent potential temperature"""
+    return 
 def wtg(T,Tpot,Qcool_day,dTpot_dp):
     """ Calculate vertical velocity by using 
     the weak temperature gradient approximation 
@@ -551,7 +575,9 @@ def mask_point(ds, grid):
 
 def mask_tropics(ds, grid):
     mask_tropics = (
-    (grid.clat > np.deg2rad(-20)) &
-    (grid.clat < np.deg2rad(20))
+    # (grid.clon > np.deg2rad(-1)) &
+    # (grid.clon < np.deg2rad(1)) &
+    (grid.clat > np.deg2rad(-30.25)) &
+    (grid.clat < np.deg2rad(30.25))
     )
     return ds.isel(cell=mask_tropics)
