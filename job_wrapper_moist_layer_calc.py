@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 times = np.arange(
-        '2021-06-01T00:00:00', '2021-07-01T00:00:00', dtype='datetime64[3h]')
+        '2021-01-01', '2021-02-01', dtype='datetime64[1D]')
 for time in times:
     time_str = str(time)
     os.system("sbatch "

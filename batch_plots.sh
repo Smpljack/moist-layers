@@ -13,5 +13,5 @@
 module load python3
 
 
-~/.local/share/jupyter/kernels/bin/python add_var_to_ds.py --time=$1 # --variable=$2 --region=$3 --stat_type=$4
+~/.local/share/jupyter/kernels/bin/python eml_hovmoller_plot.py #--time=$1 # --variable=$2 --region=$3 --stat_type=$4
 

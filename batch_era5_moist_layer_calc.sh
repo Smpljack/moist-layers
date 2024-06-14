@@ -15,4 +15,4 @@
 module load python3
 
 
-~/.local/share/jupyter/kernels/bin/python monthly_statistics.py --time=$1 --variable=$2 --region=$3 --stat_type=$4
+~/.local/share/jupyter/kernels/bin/python calc_eml_chars_for_era5.py --time=$1 
