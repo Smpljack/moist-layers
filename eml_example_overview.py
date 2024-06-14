@@ -22,7 +22,7 @@ sns.set_context('paper')
 parser = argparse.ArgumentParser()
 parser.add_argument("--time", type=str,
                 help="timestamp",
-                default="2021-07-19T06:00:00")
+                default="2021-07-19T00:00:00")
 args = parser.parse_args()
 eml_ds_paths = glob.glob(
     '/home/u/u300676/user_data/mprange/era5_tropics/eml_data/'
@@ -59,7 +59,7 @@ sns.set_context('paper')
 # fig, ax = plt.subplots(ncols=3, figsize=(10,5), sharey=False)
 fig = plt.figure(figsize=(9,7))
 gs = gridspec.GridSpec(
-    nrows=2, ncols=2, height_ratios=[1, 1], width_ratios=[2, 1], hspace=0.1,)
+    nrows=2, ncols=3, height_ratios=[1, 1], width_ratios=[2, 1, 1], hspace=0.1,)
 ax1 = fig.add_subplot(gs[0, :], projection=ccrs.PlateCarree())
 theta_isentrope_bool = (np.abs(eml_ds.theta - isentrope*units.kelvin) == 
     np.abs(eml_ds.theta - isentrope*units.kelvin).min(dim='fulllevel'))
@@ -214,6 +214,23 @@ ax3.set_xlim([0, 100])
 ax3.set_ylim([1013.25, 100.00])
 ax3.set_xlabel('RH / %', fontsize=12)
 ax3.legend(fontsize=7, loc='best', bbox_to_anchor=(0.4, 0.6))
+
+ax4 = fig.add_subplot(gs[1, 2])
+ax4.plot(
+    np.diff(eml_ds_point.v)/np.diff(eml_ds_point.z), 
+    eml_ds_point.pfull[1:]/100, 
+    label='v shear', color=sns.color_palette('colorblind')[2])
+ax4.plot(
+    np.diff(eml_ds_point.u)/np.diff(eml_ds_point.z), 
+    eml_ds_point.pfull[1:]/100, ls='--',
+    label='u shear', color=sns.color_palette('colorblind')[2])
+ax4.invert_yaxis()
+ax4.set_yticklabels([])
+# ax4.set_xlim([0, 100])
+ax4.set_ylim([1013.25, 100.00])
+ax4.set_xlabel('wind shear / 1/s', fontsize=12)
+ax4.legend(fontsize=7, loc='best', bbox_to_anchor=(0.4, 0.6))
+
 vmr_ref = specific_humidity2vmr(eml_ds_point.q_ref.values)
 eml_chars = ml.eml_characteristics(
                     specific_humidity2vmr(eml_ds_point.q.values)[::-1], 
@@ -290,7 +307,7 @@ if ~np.isnan(eml_chars.strength)[0]:
 
 # fig.suptitle(f'ERA5, {args.time}')
 label_axes([ax1, ax2, ax3], labels=['a)', 'b)', 'c)'], fontsize=12)
-plt.savefig(f'plots/paper/era5_eml_example_isentrope_{args.time}.pdf', dpi=300)
+plt.savefig(f'plots/paper/era5_eml_example_isentrope_shear_{args.time}.png', dpi=300)
 
 # eec.make_movie('plots/eml_monsoon_overview_rh_eml_def_*.pn    g',
 #                'videos/eml_example_overview_movie_rh_eml_def.mp4')
