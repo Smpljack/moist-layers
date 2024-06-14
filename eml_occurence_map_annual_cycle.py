@@ -27,7 +27,7 @@ def plot_monthly_eml_occurence(eml_ds, fig, ax, month):
             # eml_ds.iwv_mean,
             n_eml_middle/eml_ds.n_time, 
             cmap='density',
-            draw_coastlines=True, ax=ax, fig=fig, vmin=0, vmax=1, 
+            draw_coastlines=True, ax=ax, fig=fig, vmin=0, vmax=1, rasterized=True,
             )
     ax.hlines([0, -15, 15], -180, 180, color='black', ls='--', lw=0.5)
     ax.vlines(
@@ -58,7 +58,7 @@ def plot_monthly_eml_occurence(eml_ds, fig, ax, month):
             levels=rr_levels, alpha=1, linewidths=1,
             vmin=rr_levels[0]-(rr_levels[1]-rr_levels[0]),
             vmax=rr_levels[1]+(rr_levels[1]-rr_levels[0]),
-            cmap='Greys')
+            cmap='Greys', rasterized=True)
     if month == '07':
         ax.hlines(y=[0, 15], xmin=[-60, -60], xmax=[20, 20], color='crimson', ls='--', lw=1.5)
     return fig, ax

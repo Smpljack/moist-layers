@@ -169,5 +169,5 @@ label_axes(
     axs, labels=['a)', 'b)', 'c)', 'd)', 'e)'], fontsize=11, 
     loc=(0.02, 0.83))
 plt.savefig(
-    f'plots/revision/eml_occurence_annual_cycle_{years[0]}-{years[-1]}.png', 
+    f'plots/revision/eml_occurence_annual_cycle_{years[0]}-{years[-1]}.pdf', 
     dpi=300, bbox_inches='tight')
