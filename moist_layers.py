@@ -130,27 +130,24 @@ def eml_characteristics(h2o_vmr, ref_h2o_vmr, t, p, z,
                 for ieml in range(bound_ind.shape[0])]
         )
         else: 
-                heating_rate_anom_means = np.nan * np.ones(
-                    bound_ind.shape[0])
-                heating_rate_anom_min = np.nan * np.ones(
-                    bound_ind.shape[0])
-                heating_rate_anom_max = np.nan * np.ones(
-                    bound_ind.shape[0])
-                heating_rate_anom_10p = np.nan * np.ones(
-                    bound_ind.shape[0])
-                heating_rate_anom_90p = np.nan * np.ones(
-                    bound_ind.shape[0])
+            fill_nan = np.nan * np.ones(bound_ind.shape[0])
+            heating_rate_anom_means = fill_nan
+            heating_rate_anom_min = fill_nan
+            heating_rate_anom_max = fill_nan
+            heating_rate_anom_10p = fill_nan
+            heating_rate_anom_90p = fill_nan
     else:
-        heating_rate_median = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_min = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_max = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_10p = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_90p = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_anom_means = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_anom_min = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_anom_max = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_anom_10p = np.nan * np.ones(bound_ind.shape[0])
-        heating_rate_anom_90p = np.nan * np.ones(bound_ind.shape[0])
+        fill_nan = np.nan * np.ones(bound_ind.shape[0])
+        heating_rate_median = fill_nan 
+        heating_rate_min = fill_nan
+        heating_rate_max = fill_nan
+        heating_rate_10p = fill_nan
+        heating_rate_90p = fill_nan
+        heating_rate_anom_means = fill_nan
+        heating_rate_anom_min = fill_nan
+        heating_rate_anom_max = fill_nan
+        heating_rate_anom_10p = fill_nan
+        heating_rate_anom_90p = fill_nan
     if w_rad is not None:
         w_rad = select_pressure_range(w_rad, p, p_min, p_max)
         if w_rad_smooth_length is not None:
