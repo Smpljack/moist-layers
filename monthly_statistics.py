@@ -3,6 +3,7 @@ import numpy as np
 import glob 
 import global_land_mask as globe
 import argparse
+from pathlib import Path
 
 import eval_eml_chars as eec
 
@@ -16,24 +17,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--time", type=str,
                     help="timestamp",
-                    default="2021-07")
+                    default="2009-07")
     parser.add_argument("--variable", type=str,
                     help="variable name",
-                    default="n_eml")
+                    default="all")
     parser.add_argument("--region", type=str,
                         help="variable name",
                         default="global")
     parser.add_argument("--stat_type", type=str,
-                        help="'geographical', 'moisture_space', or 'both'",
-                        default="moisture_space")                  
+                        help="'geographical', 'moisture_space', 'hovmoller_xsec' or 'all'",
+                        default="hovmoller_xsec")                  
     args = parser.parse_args()
     var = args.variable
-    base_path = '/home/u/u300676/user_data/mprange/eml_data/gridded/'
-    file_name_head = 'gridded_monsoon_0p25deg_eml_tropics_'
-    paths = glob.glob(
+    base_path = f'/home/u/u300676/user_data/mprange/era5_tropics/eml_data/{args.time[:4]}/'
+    file_name_head = 'era5_3h_30N-S_eml_tropics_'
+    paths = sorted(glob.glob(
         base_path + 
         file_name_head + f'{args.time}*[0-9].nc'
-        )
+        ))
     print(f"Opening dataset for {args.time}", flush=True)
     eml_ds = xr.open_mfdataset(
         paths, concat_dim='time', combine='nested')
@@ -45,7 +46,21 @@ def main():
         min_pwidth=5000,
         max_pwidth=40000)
     n = len(eml_ds.time)
-    if args.stat_type in ['geographical', 'both']:
+    if args.stat_type in ['hovmoller_xsec', 'all'] and var == 'all' and args.region == 'global':
+        eml_ds_15 = eml_ds.sel(
+            {
+                'lat': 15,
+                'lon': slice(-60, 20),
+            })
+        eml_ds_eq = eml_ds.sel(
+            {
+                'lat': 0,
+                'lon': slice(-60, 20),
+            })
+        eml_ds_15.to_netcdf(base_path + f'era5_3h_atlantic_15N_{args.time}.nc', encoding={"time": {"dtype": int}})
+        eml_ds_eq.to_netcdf(base_path + f'era5_3h_atlantic_0N_{args.time}.nc', encoding={"time": {"dtype": int}})
+        
+    if args.stat_type in ['geographical', 'all'] and args.region == 'global' and var != 'all':
         if var != 'n_eml':
             print("Calculating geographical mean.", flush=True)
             mean = eml_ds[var].mean('time').rename(f'{var}_mean').load()
@@ -58,7 +73,8 @@ def main():
             mean_lat_lon_ds = xr.merge(
                 [mean, std, mean_of_squares]).assign_attrs(
                     {'n_time': n}
-                ) 
+                )
+
         if var == 'n_eml':
             print("Calculating geographical moist layer count.", flush=True)
             n_eml = (~eml_ds.eml_strength.isnull()).sum('time').rename(
@@ -68,12 +84,12 @@ def main():
                     {'n_time': n}
                 )
         print("Storing geographical mean.", flush=True)
+        dir = base_path + f'monthly_means/geographical/'
+        Path(dir).mkdir(parents=True, exist_ok=True)
         mean_lat_lon_ds.to_netcdf(
-            base_path + 
-            'monthly_means/geographical/' + 
-            file_name_head + f'{var}_{args.time}_geographical_mean.nc')
+            dir + file_name_head + f'{var}_{args.time}_geographical_mean.nc')
 
-    if args.stat_type in ['moisture_space', 'both']: 
+    if args.stat_type in ['moisture_space', 'all'] and var != 'all': 
         # Moisture space statistics
         print("Preparing moisture space data.", flush=True)
         if args.region == 'atlantic':
@@ -132,10 +148,10 @@ def main():
                 [eml_da_iwv_grouped_eml_count])
             
         print("Storing moisture space mean.", flush=True)
+        dir = base_path + f'monthly_means/moisture_space/'
+        Path(dir).mkdir(parents=True, exist_ok=True)
         moisture_space_mean_ds.to_netcdf(
-            base_path + 
-            'monthly_means/moisture_space/' + 
-            file_name_head + f'{args.region}_{var}_{args.time}_moisture_space_mean.nc') 
+            dir + file_name_head + f'{args.region}_{var}_{args.time}_moisture_space_mean.nc') 
 
 
 if __name__ == '__main__':
