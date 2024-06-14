@@ -20,6 +20,8 @@ import random
 from matplotlib.colors import ListedColormap
 import metpy.calc as mpcalc
 import matplotlib 
+import matplotlib.patches as mpatches
+
 
 from typhon.physics import (
     vmr2relative_humidity, specific_humidity2vmr, e_eq_mixed_mk)
@@ -742,8 +744,8 @@ def hovmoller_plot(
 
     # Add geopolitical boundaries for map reference
     ax1.add_feature(cfeature.COASTLINE.with_scale('50m'))
-    ax1.add_feature(
-        cfeature.LAKES.with_scale('50m'), color='black', linewidths=0.5)
+    # ax1.add_feature(
+    #     cfeature.LAKES.with_scale('50m'), color='black', linewidths=0.5)
 
     # Set some titles
     plt.title('Hovmoller Diagram', loc='left')
@@ -754,8 +756,8 @@ def hovmoller_plot(
     ax2.invert_yaxis()  # Reverse the time order to do oldest first
 
     # Plot of chosen variable averaged over latitude and slightly smoothed
-    clevs_line = np.arange(-2, 2.2, 0.2)
-    clevs_fill = np.arange(20, 50, 2)
+    clevs_line = [-1000, 0, 1000]#np.arange(-2, 4, 2)
+    clevs_fill = np.arange(30, 60, 2)
     # Tick labels
     x_tick_labels = [
         u'60\N{DEGREE SIGN}W', u'40\N{DEGREE SIGN}W', u'20\N{DEGREE SIGN}W', 
@@ -766,36 +768,55 @@ def hovmoller_plot(
     #     lons, times, data_fill, clevs_fill, 
     #     cmap='density', extend='both', linestyles='solid',
     #     negative_linestyles='dashed')
-    cf = ax2.pcolormesh(lons, times, data_fill, cmap='density', vmin=20, vmax=50)
+    cf = ax2.pcolormesh(lons, times, data_fill, cmap='Blues', vmin=30, vmax=60)
+    cs = ax2.contourf(
+        lons, times, mpcalc.smooth_n_point(data_line, 9, 2), 
+        clevs_line, hatches=['/', '\\'], alpha=0, linewidths=1.5,
+        colors='k', #negative_linestyles='dashed',
+        )
+    # cs = ax2.squiver(lons[::8], times[::4], data_line['ua'][::4, ::8], data_line['va'][::4, ::8])
     cs = ax2.contour(
         lons, times, mpcalc.smooth_n_point(
-        data_line, 9, 2), clevs_line, linewidths=1, alpha=0.8,
-        cmap='RdYlGn')
-
+        data_line, 9, 2), [0], linewidths=2.5, alpha=1, 
+        colors='k',
+        )
+    cax1 = ax2.inset_axes([1.02, 0, 0.04, 1])
     cbar1 = plt.colorbar(
-        cf, orientation='horizontal', pad=0.0002, aspect=50, extendrect=True, 
-        ax=ax2)
-    cbar1.set_label('EML strength / %')
-    norm = matplotlib.colors.Normalize(
-        vmin=cs.cvalues.min(), vmax=cs.cvalues.max())
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cs.cmap)
-    sm.set_array([])
-    cbar2 = plt.colorbar(
-        sm, ticks=clevs_line, orientation='horizontal', pad=0.01, aspect=50,
-        ax=cbar1.ax, extendrect=True,)
-    cbar2.set_label('v-wind / ms$^{-1}$')
+        cf, orientation='vertical', aspect=50, extendrect=True, 
+        cax=cax1)
+    cbar1.set_label('EML strength / %', fontsize=18)
+    cbar1.ax.tick_params(labelsize=18)
+    patch1 = mpatches.Patch(alpha=1, hatch=r'////', label='v < 0', facecolor='white')
+    patch2 = mpatches.Patch(alpha=1, hatch=r'\\\\', label='v > 0', facecolor='white')
 
+    # norm = matplotlib.colors.Normalize(
+    #     vmin=cs.cvalues.min(), vmax=cs.cvalues.max())
+    # sm = plt.cm.ScalarMappable(norm=norm, cmap=cs.cmap)
+    # sm.set_array([])
+    # cax2 = ax2.inset_axes([0, -0.3, 1, 0.04])
+    # cbar2 = plt.colorbar(
+    #     sm, orientation='horizontal', pad=0.01, aspect=50,
+    #     cax=cax2, extendrect=True,)
+    # cbar2.set_label('v-wind / ms$^{-1}$', fontsize=18)
+    # cbar2.ax.tick_params(labelsize=18)
     # Make some ticks and tick labels
     ax2.set_xticks(x_ticks)
-    ax2.set_xticklabels(x_tick_labels)
-    ax2.set_yticks(times[::8])
+    ax2.set_xticklabels(x_tick_labels, fontsize=18)
+    ax2.set_yticks(times[::8][::5])
     ax2.set_yticklabels(
-        ['{0:%Y-%m-%d %HZ}'.format(times[i]) for i in range(0, len(times), 8)])
-
+        ['{0:%Y-%m-%d}'.format(times[i]) for i in range(0, len(times), 8)][::5], 
+        fontsize=14, rotation=0)
+    for axis in ['top','bottom','left','right']:
+        ax2.spines[axis].set_linewidth(1.5)
+    # increase tick width
+    ax2.tick_params(width=1.5)
+    ax2.legend(
+        handles=[patch1, patch2], bbox_to_anchor=(0.95, 1.05), 
+        ncol=2, frameon=False, fontsize=14)
     # Set some titles
     # plt.title('moist layer strength', loc='left', fontsize=10)
-    plt.title('Time Range: {0:%Y%m%d %HZ} - {1:%Y%m%d %HZ}'.format(times[0], times[-1]),
-            loc='right', fontsize=10)
+    # plt.title('Time Range: {0:%Y%m%d %HZ} - {1:%Y%m%d %HZ}'.format(times[0], times[-1]),
+    #         loc='right', fontsize=10)
     return (fig, ax1, ax2)
 
 def eml_char_ds_to_pgrid(eml_char_ds, pgrid, vertical_dim):

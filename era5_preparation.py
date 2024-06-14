@@ -49,5 +49,5 @@ def main():
             '/home/u/u300676/user_data/mprange/era5_tropics/' 
             'era5_tropics_2021-'+'%02d'%month+'_mean.nc')
 
-f __name__ == '__main__':
+if __name__ == '__main__':
     main()
