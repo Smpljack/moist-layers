@@ -20,19 +20,19 @@ def add_crh_to_ds(eml_ds, q_var='hus', col_rh_varname='col_rh'):
         relative_humidity2vmr(
             np.ones(eml_ds.pfull.shape), 
             eml_ds.pfull.values, 
-            eml_ds.ta.values, 
+            eml_ds.t.values, 
             e_eq=e_eq_mixed_mk), 
         dims=['fulllevel', 'lat', 'lon']
         )
     vmr_sat_lay = (vmr_sat.where(
             # Free tropospheric humidity
-            (eml_ds.pfull < 80000) & (eml_ds.pfull > 10000)).
+            (eml_ds.pfull < 105000) & (eml_ds.pfull > 5000)).
             dropna(dim='fulllevel', how='all').values[::-1, :, :])
     vmr_lay = (specific_humidity2vmr(eml_ds[f'{q_var}']).where(
-            (eml_ds.pfull < 80000) & (eml_ds.pfull > 10000)).
+            (eml_ds.pfull < 105000) & (eml_ds.pfull > 5000)).
             dropna(dim='fulllevel', how='all').values[::-1, :, :])
     pfull_lay = (eml_ds.pfull.where(
-            (eml_ds.pfull < 80000) & (eml_ds.pfull > 10000)).
+            (eml_ds.pfull < 105000) & (eml_ds.pfull > 5000)).
             dropna(dim='fulllevel', how='all').values[::-1, :, :])
     for ilat, lat in enumerate(eml_ds.lat.values):
         for ilon, lon in enumerate(eml_ds.lon.values):
@@ -104,9 +104,9 @@ def add_iwv_to_ds(eml_ds, q_var='hus', iwv_varname='iwv'):
         for ilon, lon in enumerate(eml_ds.lon.values):
             vmr_col = vmr[:, ilat, ilon]
             if np.all(np.isnan(vmr_col)):
-                print(
-                    f'Found no reference q at lat/lon {lat}/{lon}', 
-                    flush=True)
+                # print(
+                #     f'Found no reference q at lat/lon {lat}/{lon}', 
+                #     flush=True)
                 eml_ds[iwv_varname][ilat, ilon] = np.nan
                 continue
             pfull_col = pfull[:, ilat, ilon]
@@ -131,8 +131,8 @@ def main():
                     help="timestamp",
                     default="2021-07")
     args = parser.parse_args()
-    base_path = '/home/u/u300676/user_data/mprange/eml_data/gridded/'
-    file_name_head = 'gridded_monsoon_0p25deg_eml_tropics_'
+    base_path = '/home/u/u300676/user_data/mprange/era5_tropics/eml_data/'
+    file_name_head = 'era5_3h_30N-S_eml_tropics_'
     paths = glob.glob(
         base_path + 
         file_name_head + f'{args.time}*[0-9].nc'
@@ -141,16 +141,16 @@ def main():
     for file in paths:
         print(f"Calculating IWV for\n{file}", flush=True)
         eml_ds = xr.open_dataset(file)
-        eml_ds = add_iwv_to_ds(eml_ds, q_var='hus', iwv_varname='iwv') 
+        # eml_ds = add_iwv_to_ds(eml_ds, q_var='hus', iwv_varname='iwv') 
         # eml_ds = add_iwv_to_ds(eml_ds, q_var='q_ref', col_rh_varname='ref_iwv') 
         # for var in ['va', 'v']:
         #     if var in list(eml_ds.variables):
         #         eml_ds = eml_ds.drop(var)
-        # eml_ds = add_crh_to_ds(eml_ds, q_var='q', col_rh_varname='col_rh')
+        eml_ds = add_crh_to_ds(eml_ds, q_var='q', col_rh_varname='col_rh')
         # eml_ds = add_crh_to_ds(eml_ds, q_var='q_ref', col_rh_varname='ref_col_rh')
         
         print('Storing data!')
-        eml_ds.to_netcdf(file[:-3] + '_iwv.nc')
+        eml_ds.to_netcdf(file[:-3] + '_crh.nc')
 
 
 if __name__ == '__main__':
